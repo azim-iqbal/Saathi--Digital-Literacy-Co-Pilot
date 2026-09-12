@@ -13,6 +13,9 @@ import android.graphics.RectF
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.os.StrictMode
 import android.provider.Settings
 import android.view.Gravity
 import android.view.View
@@ -71,9 +74,26 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (BuildConfig.DEBUG) {
+            StrictMode.setThreadPolicy(StrictMode.ThreadPolicy.Builder().detectDiskReads().detectDiskWrites().detectNetwork().penaltyLog().build())
+        }
+        startMainThreadHeartbeat()
         setContentView(buildScreen())
         restoreConversationOrWelcome()
         if (!preferences.getBoolean(LANGUAGE_PICKER_SHOWN, false)) showLanguagePicker()
+    }
+
+    private fun startMainThreadHeartbeat() {
+        val handler = Handler(Looper.getMainLooper())
+        var previous = System.currentTimeMillis()
+        handler.post(object : Runnable {
+            override fun run() {
+                val now = System.currentTimeMillis()
+                if (now - previous > 4_500L) android.util.Log.w("SaathiANR", "Main thread heartbeat delayed ${now - previous}ms")
+                previous = now
+                handler.postDelayed(this, 2_000L)
+            }
+        })
     }
 
     private fun buildScreen(): View {
@@ -365,13 +385,14 @@ class MainActivity : Activity() {
             return
         }
         val language = languageMode()
-        speechInput?.destroy()
-        speechInput = SpeechInputManager(
-            this,
-            { value -> input.setText(value); submitReply() },
-            { assistantMessage(GuidanceCopy.lowConfidence(language)) },
-            { assistantMessage(GuidanceCopy.lowConfidence(language)) }
-        )
+        if (speechInput == null) {
+            speechInput = SpeechInputManager(
+                this,
+                { value -> input.setText(value); submitReply() },
+                { assistantMessage(GuidanceCopy.lowConfidence(language)) },
+                { assistantMessage(GuidanceCopy.lowConfidence(language)) }
+            )
+        }
         speechInput?.listen(language.sttTag)
     }
 

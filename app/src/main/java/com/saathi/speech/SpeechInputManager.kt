@@ -14,11 +14,14 @@ class SpeechInputManager(
 ) : RecognitionListener {
     private val recognizer = SpeechRecognizer.createSpeechRecognizer(context)
     init { recognizer.setRecognitionListener(this) }
-    fun listen(language: String) = recognizer.startListening(Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+    fun listen(language: String) {
+        runCatching { recognizer.cancel() }
+        recognizer.startListening(Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
         putExtra(RecognizerIntent.EXTRA_LANGUAGE, language)
         putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
         putExtra(RecognizerIntent.EXTRA_PROMPT, "Tell Saathi what you want to do")
-    })
+        })
+    }
     fun destroy() = recognizer.destroy()
     override fun onResults(results: android.os.Bundle) {
         val confidence = results.getFloatArray(SpeechRecognizer.CONFIDENCE_SCORES)?.firstOrNull()

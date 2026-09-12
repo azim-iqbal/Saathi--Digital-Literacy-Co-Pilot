@@ -7,6 +7,7 @@ import com.saathi.core.UiNode
 /** This is the privacy boundary: callers only receive redacted values. */
 object NodeMasker {
     private val sensitiveTerms = listOf("pin", "otp", "password", "cvv", "mpin", "passcode", "security code")
+    private const val MAX_NODES = 600
 
     fun flatten(root: AccessibilityNodeInfo): List<UiNode> {
         val nodes = mutableListOf<UiNode>()
@@ -15,6 +16,7 @@ object NodeMasker {
     }
 
     private fun visit(node: AccessibilityNodeInfo, into: MutableList<UiNode>) {
+        if (into.size >= MAX_NODES) return
         val bounds = Rect().also(node::getBoundsInScreen)
         if (node.isVisibleToUser && !bounds.isEmpty) {
             val rawText = node.text?.toString()
@@ -35,7 +37,12 @@ object NodeMasker {
                 isSensitive = sensitive
             )
         }
-        for (index in 0 until node.childCount) node.getChild(index)?.let { child -> visit(child, into) }
+        for (index in 0 until node.childCount) {
+            if (into.size >= MAX_NODES) return
+            node.getChild(index)?.let { child ->
+                try { visit(child, into) } finally { runCatching { child.recycle() } }
+            }
+        }
     }
 
     fun isSensitive(isPassword: Boolean, vararg values: String?): Boolean =

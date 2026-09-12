@@ -31,10 +31,14 @@ class HighlightOverlayService : Service() {
             val params = WindowManager.LayoutParams(
                 WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT,
                 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
                 android.graphics.PixelFormat.TRANSLUCENT
-            ).apply { gravity = Gravity.TOP or Gravity.START }
+            ).apply {
+                gravity = Gravity.TOP or Gravity.START
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+            }
             windowManager?.addView(overlay, params)
+            overlay?.post { overlay?.calibrate() }
         }
         overlay?.setState(target, sensitive, complete, intent?.getStringExtra(EXTRA_STATUS))
         return START_NOT_STICKY
@@ -69,11 +73,21 @@ private class GuidanceOverlay(context: Context) : android.view.View(context) {
     private val label = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE; textSize = 24f; typeface = android.graphics.Typeface.DEFAULT_BOLD }
     private val labelBg = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(169, 33, 48) }
     private var target: Rect? = null; private var previousTarget: Rect? = null; private var sensitive = emptyList<Rect>(); private var complete = false; private var status: String? = null; private var pulse = 1f
+    private var calibrationX = 0; private var calibrationY = 0
     private val animator = ValueAnimator.ofFloat(0.92f, 1.10f).apply { duration = 760; repeatCount = ValueAnimator.INFINITE; repeatMode = ValueAnimator.REVERSE; interpolator = LinearInterpolator(); addUpdateListener { pulse = it.animatedValue as Float; invalidate() }; start() }
     fun setState(newTarget: Rect?, newSensitive: List<Rect>, isComplete: Boolean, newStatus: String?) {
         if (newTarget != target) previousTarget = target
         target = newTarget; sensitive = newSensitive; complete = isComplete; status = newStatus; invalidate()
     }
+    fun calibrate() {
+        val location = IntArray(2)
+        getLocationOnScreen(location)
+        calibrationX = -location[0]
+        calibrationY = -location[1]
+        setOnApplyWindowInsetsListener { _, insets -> insets }
+        invalidate()
+    }
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) { super.onSizeChanged(w, h, oldw, oldh); post { calibrate() } }
     override fun onDetachedFromWindow() { animator.cancel(); super.onDetachedFromWindow() }
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
@@ -96,7 +110,7 @@ private class GuidanceOverlay(context: Context) : android.view.View(context) {
 
     private fun drawTargetAnnotation(canvas: Canvas, target: Rect) {
         val inset = 8f * pulse
-        val outline = RectF(target.left - inset, target.top - inset, target.right + inset, target.bottom + inset)
+        val outline = RectF(target.left + calibrationX - inset, target.top + calibrationY - inset, target.right + calibrationX + inset, target.bottom + calibrationY + inset)
         canvas.drawRoundRect(outline, 24f, 24f, fill)
         canvas.drawRoundRect(outline, 24f, 24f, ring)
 
