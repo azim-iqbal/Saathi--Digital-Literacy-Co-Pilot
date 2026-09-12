@@ -1,6 +1,9 @@
 package com.saathi.orchestrator
 
 import android.content.Context
+import android.content.BroadcastReceiver
+import android.content.IntentFilter
+import android.os.Build
 import android.content.Intent
 import android.os.Handler
 import android.os.Looper
@@ -19,6 +22,7 @@ import com.saathi.language.GuidanceCopy
 import com.saathi.language.GuidanceLanguage
 import com.saathi.overlay.HighlightOverlayService
 import com.saathi.speech.TtsManager
+import com.saathi.speech.VoiceConversationService
 import java.util.concurrent.Executors
 
 object SaathiSession {
@@ -30,6 +34,8 @@ object SaathiSession {
     private var language = GuidanceLanguage.ENGLISH
     private var flowCategory: String? = null
     private var offlineNoticeGiven = false
+    private var spokenPromptsEnabled = false
+    private var lastSpokenTargetId: String? = null
     private var active = false
     private var latestNodes: List<UiNode> = emptyList()
     private var settledFingerprint = ""
@@ -38,8 +44,14 @@ object SaathiSession {
     private var history = mutableListOf<StepHistory>()
     private var pendingRunnable: Runnable? = null
     private var wrongTapRunnable: Runnable? = null
+    private var voiceReplyReceiver: BroadcastReceiver? = null
 
-    fun start(appContext: Context, goalText: String, languageMode: GuidanceLanguage): GuardrailResult {
+    fun start(
+        appContext: Context,
+        goalText: String,
+        languageMode: GuidanceLanguage,
+        speakPrompts: Boolean = false
+    ): GuardrailResult {
         context = appContext.applicationContext
         goal = goalText
         language = languageMode
@@ -55,11 +67,14 @@ object SaathiSession {
         flowCategory = scope.category
         active = true
         offlineNoticeGiven = false
+        spokenPromptsEnabled = speakPrompts
+        lastSpokenTargetId = null
         history.clear()
         settledFingerprint = ""
         expectedFingerprint = ""
         lastStep = null
         ensureTts()
+        if (spokenPromptsEnabled) startVoiceConversation()
         return scope
     }
 
@@ -67,6 +82,8 @@ object SaathiSession {
         active = false
         handler.removeCallbacksAndMessages(null)
         context?.stopService(Intent(context, HighlightOverlayService::class.java))
+        context?.let(VoiceConversationService::stop)
+        unregisterVoiceConversation()
     }
 
     fun isActive() = active
@@ -113,7 +130,7 @@ object SaathiSession {
             } else {
                 null
             }
-            val fallback = DemoGuide.next(nodes, language.apiTag, previousFailed)
+            val fallback = DemoGuide.next(goal, nodes, language.apiTag, previousFailed)
             val step = when {
                 remoteStep?.action == GuideAction.REFUSE -> refusalStep()
                 remoteStep != null -> remoteStep
@@ -134,7 +151,7 @@ object SaathiSession {
         lastStep = step
 
         val app = context ?: return
-        tts?.speak(step.correctionNote ?: step.speechText, language)
+        speakWhenUseful(step)
         app.startService(
             HighlightOverlayService.intent(
                 app,
@@ -146,6 +163,8 @@ object SaathiSession {
 
         if (step.action == GuideAction.REFUSE) {
             active = false
+            context?.let(VoiceConversationService::stop)
+            unregisterVoiceConversation()
             return
         }
         if (step.goalComplete) GuidanceFlowCache(app).markCompleted(flowCategory)
@@ -162,6 +181,71 @@ object SaathiSession {
         expectedOutcome = "No guidance is provided outside Saathi's task scope.", goalComplete = true,
         action = GuideAction.REFUSE
     )
+
+    /**
+     * Visual guidance is the default. Speech is opt-in and only fires for a genuinely new
+     * destination or a gentle correction, avoiding repetitive narration while a user types.
+     */
+    private fun speakWhenUseful(step: GuideStep) {
+        if (!spokenPromptsEnabled) return
+
+        val targetId = step.target?.resourceId ?: step.target?.description
+        val isCorrection = step.correctionNote != null
+        if (isCorrection || targetId != lastSpokenTargetId) {
+            val prompt = step.correctionNote ?: step.speechText
+            val isSensitiveTarget = targetId.orEmpty().lowercase().let { it.contains("pin") || it.contains("password") || it.contains("otp") || it.contains("cvv") }
+            val app = context ?: return
+            if (isSensitiveTarget) {
+                VoiceConversationService.speakOnly(app, language, GuidanceCopy.privateField(language))
+            } else {
+                VoiceConversationService.ask(app, language, "$prompt ${GuidanceCopy.voiceControlHint(language)}")
+            }
+            lastSpokenTargetId = targetId
+        }
+    }
+
+    private fun startVoiceConversation() {
+        val app = context ?: return
+        unregisterVoiceConversation()
+        voiceReplyReceiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context, intent: Intent) {
+                handleVoiceReply(intent.getStringExtra(VoiceConversationService.EXTRA_REPLY).orEmpty())
+            }
+        }
+        val filter = IntentFilter(VoiceConversationService.ACTION_REPLY)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            app.registerReceiver(voiceReplyReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            @Suppress("DEPRECATION") app.registerReceiver(voiceReplyReceiver, filter)
+        }
+        VoiceConversationService.start(app, language)
+    }
+
+    private fun unregisterVoiceConversation() {
+        val app = context ?: return
+        voiceReplyReceiver?.let { runCatching { app.unregisterReceiver(it) } }
+        voiceReplyReceiver = null
+    }
+
+    /** Interpret only short control phrases; spoken personal data is neither recorded nor handled here. */
+    private fun handleVoiceReply(reply: String) {
+        if (!active || reply.isBlank()) return
+        val normalized = reply.lowercase()
+        val app = context ?: return
+        when {
+            listOf("cancel", "stop", "exit", "रद्द", "बंद", "रोक").any(normalized::contains) -> {
+                VoiceConversationService.speakOnly(app, language, GuidanceCopy.guidancePaused(language))
+                stop()
+            }
+            listOf("help", "repeat", "again", "मदद", "दोबारा", "phir").any(normalized::contains) -> {
+                lastStep?.let { VoiceConversationService.ask(app, language, it.speechText) }
+            }
+            listOf("understood", "got it", "samajh", "समझ", "हाँ", "haan").any(normalized::contains) -> {
+                VoiceConversationService.speakOnly(app, language, GuidanceCopy.acknowledged(language))
+            }
+            else -> VoiceConversationService.ask(app, language, GuidanceCopy.voiceFallback(language))
+        }
+    }
 
     private fun ensureTts() {
         if (tts != null) return

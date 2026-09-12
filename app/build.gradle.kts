@@ -16,6 +16,11 @@ android {
     namespace = "com.saathi"
     compileSdk = 35
 
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
     defaultConfig {
         applicationId = "com.saathi"
         minSdk = 26
@@ -26,6 +31,10 @@ android {
         buildConfigField("String", "GEMINI_MODEL", "\"${geminiModel.replace("\"", "\\\"")}\"")
     }
     buildFeatures { buildConfig = true }
+}
+
+kotlin {
+    jvmToolchain(17)
 }
 
 dependencies {

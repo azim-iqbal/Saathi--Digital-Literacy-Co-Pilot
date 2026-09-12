@@ -7,6 +7,7 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Rect
+import android.graphics.RectF
 import android.os.IBinder
 import android.os.Build
 import android.provider.Settings
@@ -62,9 +63,9 @@ private fun Intent.rectListExtra(key: String): ArrayList<Rect>? = if (Build.VERS
 }
 
 private class GuidanceOverlay(context: Context) : android.view.View(context) {
-    private val ring = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(20, 108, 90); style = Paint.Style.STROKE; strokeWidth = 8f }
-    private val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(35, 20, 108, 90); style = Paint.Style.FILL }
-    private val label = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE; textSize = 27f; typeface = android.graphics.Typeface.DEFAULT_BOLD }
+    private val ring = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(20, 108, 90); style = Paint.Style.STROKE; strokeWidth = 5f }
+    private val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(28, 20, 108, 90); style = Paint.Style.FILL }
+    private val label = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE; textSize = 24f; typeface = android.graphics.Typeface.DEFAULT_BOLD }
     private val labelBg = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(169, 33, 48) }
     private var target: Rect? = null; private var sensitive = emptyList<Rect>(); private var complete = false; private var pulse = 1f
     private val animator = ValueAnimator.ofFloat(0.92f, 1.10f).apply { duration = 760; repeatCount = ValueAnimator.INFINITE; repeatMode = ValueAnimator.REVERSE; interpolator = LinearInterpolator(); addUpdateListener { pulse = it.animatedValue as Float; invalidate() }; start() }
@@ -73,14 +74,27 @@ private class GuidanceOverlay(context: Context) : android.view.View(context) {
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         target?.let { rect ->
-            val cx = rect.exactCenterX(); val cy = rect.exactCenterY(); val radius = maxOf(rect.width(), rect.height()) * 0.62f * pulse + 22
-            canvas.drawCircle(cx, cy, radius, fill); canvas.drawCircle(cx, cy, radius, ring)
-            canvas.drawText("TAP HERE", cx - 66, rect.top - 18f, ring.apply { style = Paint.Style.FILL; textSize = 25f }); ring.style = Paint.Style.STROKE
+            drawTargetAnnotation(canvas, rect)
         }
         sensitive.forEach { rect ->
             val badge = Rect(rect.left, (rect.top - 38).coerceAtLeast(0), (rect.left + 310).coerceAtMost(width), rect.top)
             canvas.drawRect(badge, labelBg); canvas.drawText("LOCKED - EXCLUDED FROM AI", badge.left + 10f, badge.bottom - 10f, label)
         }
         if (complete) { canvas.drawText("DONE", width / 2f - 45f, 96f, ring.apply { style = Paint.Style.FILL; textSize = 36f }); ring.style = Paint.Style.STROKE }
+    }
+
+    private fun drawTargetAnnotation(canvas: Canvas, target: Rect) {
+        val inset = 8f * pulse
+        val outline = RectF(target.left - inset, target.top - inset, target.right + inset, target.bottom + inset)
+        canvas.drawRoundRect(outline, 24f, 24f, fill)
+        canvas.drawRoundRect(outline, 24f, 24f, ring)
+
+        val tagWidth = 118f
+        val tagHeight = 38f
+        val tagTop = (outline.top - tagHeight - 10f).coerceAtLeast(8f)
+        val tag = RectF(outline.left, tagTop, outline.left + tagWidth, tagTop + tagHeight)
+        canvas.drawRoundRect(tag, tagHeight / 2, tagHeight / 2, ring.apply { style = Paint.Style.FILL })
+        canvas.drawText("NEXT STEP", tag.left + 14f, tag.bottom - 12f, label)
+        ring.style = Paint.Style.STROKE
     }
 }

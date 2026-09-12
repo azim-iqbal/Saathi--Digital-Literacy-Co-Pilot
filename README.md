@@ -37,6 +37,12 @@ Saathi is intentionally limited to concrete on-screen tasks such as bill payment
 - Android 8.0 (API 26) or newer device/emulator
 - Optional: a Gemini API key for online guidance
 
+### Supported Android build toolchain
+
+This project is pinned to **Android Gradle Plugin 8.6.1**, **Gradle 8.7**, and **JDK 17**. In Android Studio, set **Gradle JDK** to the bundled JDK 17 (`Settings/Preferences → Build, Execution, Deployment → Build Tools → Gradle`) and sync the **repository root** - the folder that contains `settings.gradle.kts` - rather than the `app` folder alone.
+
+If Android Studio shows manifest errors such as “attribute is not allowed here” together with unresolved `MainActivity` or service classes, resolve the Gradle sync first. Those errors are typically the IDE falling back to incomplete Android model information; they do not indicate that the manifest attributes should be removed.
+
 ## Getting started
 
 1. Clone the repository and open it in Android Studio.

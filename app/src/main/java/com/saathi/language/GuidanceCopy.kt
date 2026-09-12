@@ -21,4 +21,40 @@ object GuidanceCopy {
         GuidanceLanguage.HINDI -> "हिंदी आवाज़ इंस्टॉल नहीं है। आप इसे Text-to-Speech सेटिंग्स में इंस्टॉल कर सकते हैं; अभी अंग्रेज़ी आवाज़ काम करेगी।"
         GuidanceLanguage.HINGLISH -> HinglishTemplates.ttsSetup
     }
+
+    fun voiceIntro(language: GuidanceLanguage) = when (language) {
+        GuidanceLanguage.ENGLISH -> "Voice guidance is on. I will describe one safe step at a time. You can say repeat, help, or cancel."
+        GuidanceLanguage.HINDI -> "आवाज़ से मार्गदर्शन चालू है। मैं एक बार में एक सुरक्षित कदम बताऊँगा। आप दोबारा, मदद, या रद्द बोल सकते हैं।"
+        GuidanceLanguage.HINGLISH -> "Voice guidance on hai. Main ek time par ek safe step bataunga. Aap repeat, help, ya cancel bol sakte hain."
+    }
+
+    fun voiceControlHint(language: GuidanceLanguage) = when (language) {
+        GuidanceLanguage.ENGLISH -> "When you understand, say understood. Say help to hear it again, or cancel to stop guidance."
+        GuidanceLanguage.HINDI -> "समझ आने पर समझ गया बोलें। दोबारा सुनने के लिए मदद, या मार्गदर्शन रोकने के लिए रद्द बोलें।"
+        GuidanceLanguage.HINGLISH -> "Samajh aaye to samajh gaya boliye. Phir se sunne ke liye help, ya guidance rokne ke liye cancel boliye."
+    }
+
+    fun privateField(language: GuidanceLanguage) = when (language) {
+        GuidanceLanguage.ENGLISH -> "This is a private field. Enter it yourself; Saathi will not listen to or see the value."
+        GuidanceLanguage.HINDI -> "यह निजी जानकारी का फ़ील्ड है। इसे आप खुद भरें; Saathi इसकी कीमत न सुनेगा, न देखेगा।"
+        GuidanceLanguage.HINGLISH -> "Yeh private field hai. Isse aap khud bhariye; Saathi value ko na sunega, na dekhega."
+    }
+
+    fun guidancePaused(language: GuidanceLanguage) = when (language) {
+        GuidanceLanguage.ENGLISH -> "Guidance is paused. Nothing was submitted."
+        GuidanceLanguage.HINDI -> "मार्गदर्शन रोक दिया गया है। कुछ भी सबमिट नहीं हुआ।"
+        GuidanceLanguage.HINGLISH -> "Guidance pause ho gayi hai. Kuch bhi submit nahi hua."
+    }
+
+    fun acknowledged(language: GuidanceLanguage) = when (language) {
+        GuidanceLanguage.ENGLISH -> "Great. Take your time and use the highlighted control. I will speak again after the screen changes."
+        GuidanceLanguage.HINDI -> "बहुत बढ़िया। आराम से हाइलाइट किए गए विकल्प का उपयोग करें। स्क्रीन बदलने पर मैं फिर बोलूँगा।"
+        GuidanceLanguage.HINGLISH -> "Bahut badhiya. Aaram se highlighted control use kijiye. Screen badalne par main phir bolunga."
+    }
+
+    fun voiceFallback(language: GuidanceLanguage) = when (language) {
+        GuidanceLanguage.ENGLISH -> "I heard you. Please say understood, help, or cancel."
+        GuidanceLanguage.HINDI -> "मैंने सुना। कृपया समझ गया, मदद, या रद्द बोलें।"
+        GuidanceLanguage.HINGLISH -> "Maine suna. Please samajh gaya, help, ya cancel boliye."
+    }
 }
