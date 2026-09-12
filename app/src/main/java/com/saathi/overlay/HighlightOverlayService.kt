@@ -36,16 +36,17 @@ class HighlightOverlayService : Service() {
             ).apply { gravity = Gravity.TOP or Gravity.START }
             windowManager?.addView(overlay, params)
         }
-        overlay?.setState(target, sensitive, complete)
+        overlay?.setState(target, sensitive, complete, intent?.getStringExtra(EXTRA_STATUS))
         return START_NOT_STICKY
     }
     override fun onDestroy() { overlay?.let { windowManager?.removeView(it) }; overlay = null; super.onDestroy() }
     override fun onBind(intent: Intent?): IBinder? = null
 
     companion object {
-        private const val EXTRA_TARGET = "target"; private const val EXTRA_SENSITIVE = "sensitive"; private const val EXTRA_COMPLETE = "complete"
-        fun intent(context: Context, target: Rect?, sensitive: List<Rect>, complete: Boolean) = Intent(context, HighlightOverlayService::class.java).apply {
+        private const val EXTRA_TARGET = "target"; private const val EXTRA_SENSITIVE = "sensitive"; private const val EXTRA_COMPLETE = "complete"; private const val EXTRA_STATUS = "status"
+        fun intent(context: Context, target: Rect?, sensitive: List<Rect>, complete: Boolean, status: String? = null) = Intent(context, HighlightOverlayService::class.java).apply {
             putExtra(EXTRA_TARGET, target); putParcelableArrayListExtra(EXTRA_SENSITIVE, ArrayList(sensitive)); putExtra(EXTRA_COMPLETE, complete)
+            status?.let { putExtra(EXTRA_STATUS, it) }
         }
     }
 }
@@ -67,14 +68,24 @@ private class GuidanceOverlay(context: Context) : android.view.View(context) {
     private val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(28, 20, 108, 90); style = Paint.Style.FILL }
     private val label = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE; textSize = 24f; typeface = android.graphics.Typeface.DEFAULT_BOLD }
     private val labelBg = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(169, 33, 48) }
-    private var target: Rect? = null; private var sensitive = emptyList<Rect>(); private var complete = false; private var pulse = 1f
+    private var target: Rect? = null; private var previousTarget: Rect? = null; private var sensitive = emptyList<Rect>(); private var complete = false; private var status: String? = null; private var pulse = 1f
     private val animator = ValueAnimator.ofFloat(0.92f, 1.10f).apply { duration = 760; repeatCount = ValueAnimator.INFINITE; repeatMode = ValueAnimator.REVERSE; interpolator = LinearInterpolator(); addUpdateListener { pulse = it.animatedValue as Float; invalidate() }; start() }
-    fun setState(newTarget: Rect?, newSensitive: List<Rect>, isComplete: Boolean) { target = newTarget; sensitive = newSensitive; complete = isComplete; invalidate() }
+    fun setState(newTarget: Rect?, newSensitive: List<Rect>, isComplete: Boolean, newStatus: String?) {
+        if (newTarget != target) previousTarget = target
+        target = newTarget; sensitive = newSensitive; complete = isComplete; status = newStatus; invalidate()
+    }
     override fun onDetachedFromWindow() { animator.cancel(); super.onDetachedFromWindow() }
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         target?.let { rect ->
             drawTargetAnnotation(canvas, rect)
+        }
+        status?.let { text ->
+            val top = height * .18f
+            val panel = RectF(20f, top, width - 20f, top + 130f)
+            canvas.drawRoundRect(panel, 24f, 24f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(13, 92, 92) })
+            val words = text.chunked(42)
+            words.take(3).forEachIndexed { index, line -> canvas.drawText(line, panel.left + 16f, panel.top + 34f + index * 28f, label) }
         }
         sensitive.forEach { rect ->
             val badge = Rect(rect.left, (rect.top - 38).coerceAtLeast(0), (rect.left + 310).coerceAtMost(width), rect.top)
@@ -95,6 +106,13 @@ private class GuidanceOverlay(context: Context) : android.view.View(context) {
         val tag = RectF(outline.left, tagTop, outline.left + tagWidth, tagTop + tagHeight)
         canvas.drawRoundRect(tag, tagHeight / 2, tagHeight / 2, ring.apply { style = Paint.Style.FILL })
         canvas.drawText("NEXT STEP", tag.left + 14f, tag.bottom - 12f, label)
+        // A small pointer makes the click zone easier to locate than a ring alone.
+        val pointerX = outline.right - 12f
+        val pointerY = outline.bottom + 14f
+        val pointer = android.graphics.Path().apply {
+            moveTo(pointerX, pointerY); lineTo(pointerX + 20f, pointerY + 8f); lineTo(pointerX + 8f, pointerY + 15f); lineTo(pointerX + 16f, pointerY + 30f); lineTo(pointerX + 9f, pointerY + 34f); lineTo(pointerX + 1f, pointerY + 18f); lineTo(pointerX - 6f, pointerY + 27f); close()
+        }
+        canvas.drawPath(pointer, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE; style = Paint.Style.FILL; setShadowLayer(4f, 1f, 2f, Color.DKGRAY) })
         ring.style = Paint.Style.STROKE
     }
 }

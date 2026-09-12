@@ -59,9 +59,12 @@ class VoiceConversationService : Service(), RecognitionListener {
     private fun ask(prompt: String) {
         if (prompt.isBlank()) return
         stopListening()
-        tts?.speak(prompt, language)
-        val duration = min(6_500L, max(1_500L, prompt.length * 58L))
-        handler.postDelayed({ if (active) startListening() }, duration)
+        // Start listening only after the speech engine completes; elapsed-time estimates cause
+        // silence or talking-over on slower engines and after audio interruptions.
+        tts?.speak(prompt, language) { completed ->
+            if (completed && active) handler.post { startListening() }
+            if (!completed && active) sendBroadcast(Intent(ACTION_VOICE_UNAVAILABLE).setPackage(packageName))
+        }
     }
 
     private fun speakOnly(prompt: String) {
@@ -94,7 +97,16 @@ class VoiceConversationService : Service(), RecognitionListener {
         }
     }
 
-    override fun onError(error: Int) { listening = false }
+    override fun onError(error: Int) {
+        listening = false
+        // Recognition commonly stops after a timeout or audio-focus interruption. Keep the
+        // conversation alive by offering the next short listening turn instead of going silent.
+        if (active && error != SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS) {
+            handler.postDelayed({ if (active) startListening() }, 700)
+        } else if (error == SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS) {
+            sendBroadcast(Intent(ACTION_VOICE_UNAVAILABLE).setPackage(packageName))
+        }
+    }
     override fun onReadyForSpeech(params: Bundle?) = Unit
     override fun onBeginningOfSpeech() = Unit
     override fun onRmsChanged(rmsdB: Float) = Unit
@@ -142,6 +154,7 @@ class VoiceConversationService : Service(), RecognitionListener {
 
     companion object {
         const val ACTION_REPLY = "com.saathi.action.VOICE_REPLY"
+        const val ACTION_VOICE_UNAVAILABLE = "com.saathi.action.VOICE_UNAVAILABLE"
         private const val ACTION_START = "com.saathi.action.START_VOICE"
         private const val ACTION_ASK = "com.saathi.action.ASK_VOICE"
         private const val ACTION_SPEAK_ONLY = "com.saathi.action.SPEAK_VOICE"

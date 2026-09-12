@@ -30,6 +30,11 @@ import com.saathi.language.GuidanceLanguage
 import com.saathi.orchestrator.SaathiSession
 import com.saathi.speech.SpeechInputManager
 import com.saathi.speech.TtsManager
+import com.saathi.storage.ConversationStore
+import com.saathi.storage.StoredMessage
+import com.saathi.storage.GuidanceStateStore
+import com.saathi.core.GuidancePolicy
+import com.saathi.device.DeviceCapabilities
 
 /** A task-first conversation surface. Saathi prepares before it begins observing a screen. */
 class MainActivity : Activity() {
@@ -61,11 +66,13 @@ class MainActivity : Activity() {
     private var waitingForDocumentConfirmation = false
     private var pendingVoiceGuidanceBrief: TaskBrief? = null
     private val preferences by lazy { getSharedPreferences(PREFERENCES_NAME, MODE_PRIVATE) }
+    private val conversationStore by lazy { ConversationStore(applicationContext) }
+    private val guidanceStateStore by lazy { GuidanceStateStore(applicationContext) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(buildScreen())
-        showWelcome()
+        restoreConversationOrWelcome()
         if (!preferences.getBoolean(LANGUAGE_PICKER_SHOWN, false)) showLanguagePicker()
     }
 
@@ -123,6 +130,11 @@ class MainActivity : Activity() {
             setOnClickListener { showLanguagePicker() }
         }
         addView(languageButton)
+        addView(TextView(this@MainActivity).apply {
+            text = "ⓘ"; textSize = 20f; setTextColor(DEEP_TEAL); setPadding(dp(14), dp(9), 0, dp(9))
+            contentDescription = "Where Saathi can help"
+            setOnClickListener { startActivity(Intent(this@MainActivity, TermsActivity::class.java)) }
+        })
     }
 
     private fun composer(): View = LinearLayout(this).apply {
@@ -157,6 +169,22 @@ class MainActivity : Activity() {
         setQuickReplies(TaskKind.entries.map { it.title }) { choice ->
             input.setText(choice)
             submitReply()
+        }
+    }
+
+    private fun restoreConversationOrWelcome() {
+        val saved = conversationStore.load()
+        pendingBrief = guidanceStateStore.restore()
+        if (saved.isEmpty()) showWelcome() else {
+            saved.forEach { addMessage(it.text, it.fromUser, persist = false) }
+            assistantMessage("Your previous conversation is restored. You can resume the task or tell me what has changed.")
+            setQuickReplies(listOf("Resume guidance", "Start a new task", "Where can Saathi help?")) { action ->
+                when (action) {
+                    "Resume guidance" -> pendingBrief?.let(::startGuidance) ?: assistantMessage("Tell me the task you would like to resume.")
+                    "Start a new task" -> { conversationStore.clear(); guidanceStateStore.clear(); conversation.removeAllViews(); showWelcome() }
+                    else -> startActivity(Intent(this, TermsActivity::class.java))
+                }
+            }
         }
     }
 
@@ -231,16 +259,29 @@ class MainActivity : Activity() {
             assistantMessage(GuidanceCopy.guardrailRedirect(languageMode()))
             return
         }
+        guidanceStateStore.save(brief, languageMode(), voiceToggle.isChecked)
         assistantMessage("Guidance is ready. Open ${brief.appOrWebsite ?: "the app"}; I will highlight the next safe step. You remain in control of every tap and entry.")
-        setQuickReplies(listOf("Grant overlay", "Enable accessibility", "Enable private capture", "Open demo bill pay", "Cancel")) { action ->
+        val device = DeviceCapabilities.detect(this)
+        if (device.batteryRisk != DeviceCapabilities.BatteryRisk.NONE) {
+            assistantMessage("${device.manufacturer} devices can pause background apps. To keep guidance active when you switch apps: ${device.manualInstructions}")
+        }
+        if (DeviceCapabilities.isBatterySaverOn(this)) assistantMessage("Battery Saver is on, so guidance may respond more slowly. You can continue, or turn it off for the most reliable background session.")
+        setQuickReplies(listOf("Grant overlay", "Enable accessibility", "Keep guidance active", "Enable private capture", "Open demo bill pay", "Cancel")) { action ->
             when (action) {
                 "Grant overlay" -> startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
                 "Enable accessibility" -> startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                "Keep guidance active" -> openBatterySetup()
                 "Enable private capture" -> startActivityForResult(ScreenshotCapture.consentIntent(this), SCREEN_CAPTURE_REQUEST)
                 "Open demo bill pay" -> startActivity(Intent(this, DemoBillPayActivity::class.java))
                 else -> cancelConversation()
             }
         }
+    }
+
+    private fun openBatterySetup() {
+        val profile = DeviceCapabilities.detect(this)
+        profile.setupIntent?.let { startActivity(it); return }
+        assistantMessage("Open this on your ${profile.manufacturer} device: ${profile.manualInstructions}")
     }
 
     private fun beginDocumentHelp() {
@@ -308,6 +349,7 @@ class MainActivity : Activity() {
         waitingForDocumentField = false
         waitingForDocumentConfirmation = false
         pendingBrief = null
+        guidanceStateStore.clear()
         SaathiSession.stop()
         assistantMessage("Guidance is paused. Nothing was uploaded or submitted. You can start a new task whenever you are ready.")
         setQuickReplies(TaskKind.entries.map { it.title }) { choice -> input.setText(choice); submitReply() }
@@ -384,7 +426,7 @@ class MainActivity : Activity() {
         conversationScroll.post { conversationScroll.smoothScrollTo(0, conversation.bottom) }
     }
 
-    private fun addMessage(value: String, fromUser: Boolean) {
+    private fun addMessage(value: String, fromUser: Boolean, persist: Boolean = true) {
         val bubble = TextView(this).apply {
             text = value
             textSize = 16f
@@ -399,6 +441,7 @@ class MainActivity : Activity() {
         bubble.alpha = 0f
         bubble.animate().alpha(1f).setDuration(180).start()
         conversationScroll.post { conversationScroll.smoothScrollTo(0, conversation.bottom) }
+        if (persist) conversationStore.append(StoredMessage(value, fromUser))
     }
 
     private fun setQuickReplies(items: List<String>, action: (String) -> Unit) {
@@ -421,8 +464,8 @@ class MainActivity : Activity() {
     }
 
     private fun defaultAppChoices(kind: TaskKind) = when (kind) {
-        TaskKind.BILL_PAYMENT -> listOf("PhonePe", "Google Pay", "Demo Bill Pay")
-        TaskKind.PAYMENT -> listOf("PhonePe", "Google Pay", "Paytm")
+        TaskKind.BILL_PAYMENT -> listOf("Official provider website", "Other website", "Demo Bill Pay")
+        TaskKind.PAYMENT -> listOf("Official provider website", "Other website")
         TaskKind.FORM -> listOf("Government portal", "College website", "Other website")
         TaskKind.TICKET -> listOf("IRCTC", "redBus", "Airline website")
         TaskKind.SETTINGS -> listOf("Android Settings", "Accessibility settings", "App settings")

@@ -54,12 +54,12 @@ object TaskIntake {
         val note = when (completedBrief.kind) {
             TaskKind.BILL_PAYMENT -> PreparationNote(
                 title = "Ready to pay a bill with ${completedBrief.appOrWebsite}",
-                detail = "I will look for the bill category, account details, amount, and a secure confirmation step.",
-                suggestedFirstStep = "Open ${completedBrief.appOrWebsite} and show me its home screen."
+                detail = "For the clearest guidance, use the provider's official website for bill details. If it later sends you to a payment app, you complete that final approval yourself.",
+                suggestedFirstStep = "Open ${completedBrief.appOrWebsite} and show its bill-payment page."
             )
             TaskKind.PAYMENT -> PreparationNote(
                 title = "Payment flow prepared",
-                detail = "I will guide the route only. You will always choose the recipient and approve any payment yourself.",
+                detail = "I can guide an official website route. Payment apps may deliberately hide their screens, so you always choose the recipient and approve any payment yourself.",
                 suggestedFirstStep = "Open ${completedBrief.appOrWebsite} and tell me when you are ready."
             )
             TaskKind.FORM -> PreparationNote(

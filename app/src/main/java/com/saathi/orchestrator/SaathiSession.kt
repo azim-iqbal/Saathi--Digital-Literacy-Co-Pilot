@@ -14,6 +14,7 @@ import com.saathi.core.GuideStep
 import com.saathi.core.GuideAction
 import com.saathi.core.StepHistory
 import com.saathi.core.UiNode
+import com.saathi.core.GuidancePolicy
 import com.saathi.guardrails.GuardrailAuditLog
 import com.saathi.guardrails.GuardrailDecision
 import com.saathi.guardrails.GuardrailEngine
@@ -45,6 +46,10 @@ object SaathiSession {
     private var pendingRunnable: Runnable? = null
     private var wrongTapRunnable: Runnable? = null
     private var voiceReplyReceiver: BroadcastReceiver? = null
+    private var currentPackage: String? = null
+    private var restrictionAnnouncedFor: String? = null
+    private var lastPresentedAt = 0L
+    private var watchdogRunnable: Runnable? = null
 
     fun start(
         appContext: Context,
@@ -73,7 +78,11 @@ object SaathiSession {
         settledFingerprint = ""
         expectedFingerprint = ""
         lastStep = null
+        currentPackage = null
+        restrictionAnnouncedFor = null
         ensureTts()
+        GuidanceForegroundService.start(context!!)
+        startWatchdog()
         if (spokenPromptsEnabled) startVoiceConversation()
         return scope
     }
@@ -81,15 +90,32 @@ object SaathiSession {
     fun stop() {
         active = false
         handler.removeCallbacksAndMessages(null)
+        watchdogRunnable = null
         context?.stopService(Intent(context, HighlightOverlayService::class.java))
         context?.let(VoiceConversationService::stop)
+        context?.let(GuidanceForegroundService::stop)
         unregisterVoiceConversation()
     }
 
     fun isActive() = active
 
-    fun onScreenChanged(nodes: List<UiNode>) {
+    fun onPackageChanged(packageName: String?) {
+        currentPackage = packageName
+        val restricted = GuidancePolicy.restrictedAppName(packageName) ?: return
+        if (restrictionAnnouncedFor == packageName) return
+        restrictionAnnouncedFor = packageName
+        val message = GuidancePolicy.unavailableMessage(language, restricted)
+        handler.post {
+            val app = context ?: return@post
+            Toast.makeText(app, message, Toast.LENGTH_LONG).show()
+            if (spokenPromptsEnabled) VoiceConversationService.speakOnly(app, language, message)
+            app.startService(HighlightOverlayService.intent(app, null, emptyList(), false, message))
+        }
+    }
+
+    fun onScreenChanged(nodes: List<UiNode>, packageName: String? = currentPackage) {
         if (!active) return
+        if (GuidancePolicy.restrictedAppName(packageName) != null) return
         latestNodes = nodes
         pendingRunnable?.let(handler::removeCallbacks)
         pendingRunnable = Runnable { evaluateSettledScreen(nodes) }.also { handler.postDelayed(it, 600) }
@@ -117,7 +143,8 @@ object SaathiSession {
             val isDemoScreen = nodes.any { node ->
                 node.resourceId?.startsWith("com.saathi:id/") == true && node.resourceId.contains("_")
             }
-            val canUseRemoteGuidance = !isDemoScreen && GeminiClient().available() && GeminiRateLimiter(app).tryAcquire()
+            val rateLimitAvailable = GeminiRateLimiter(app).tryAcquire()
+            val canUseRemoteGuidance = !isDemoScreen && GeminiClient().available() && rateLimitAvailable
             val remoteStep = if (canUseRemoteGuidance) {
                 GeminiClient().request(
                     goal = goal,
@@ -130,13 +157,15 @@ object SaathiSession {
             } else {
                 null
             }
-            val fallback = DemoGuide.next(goal, nodes, language.apiTag, previousFailed)
+            val fallback = WebsiteGuide.next(goal, nodes, language.apiTag, previousFailed)
+                ?: DemoGuide.next(goal, nodes, language.apiTag, previousFailed)
             val step = when {
                 remoteStep?.action == GuideAction.REFUSE -> refusalStep()
                 remoteStep != null -> remoteStep
                 !offlineNoticeGiven && !isDemoScreen && GeminiClient().available() -> {
                     offlineNoticeGiven = true
-                    fallback.copy(speechText = "${GuidanceCopy.offlineNotice(language)} ${fallback.speechText}")
+                    val notice = if (rateLimitAvailable) GuidanceCopy.offlineNotice(language) else "I’m guiding a little more slowly right now to stay within a safe limit."
+                    fallback.copy(speechText = "$notice ${fallback.speechText}")
                 }
                 else -> fallback
             }
@@ -146,6 +175,7 @@ object SaathiSession {
 
     private fun present(step: GuideStep) {
         if (!active) return
+        lastPresentedAt = System.currentTimeMillis()
 
         lastStep?.let { history += StepHistory(it.speechText, it.expectedOutcome) }
         lastStep = step
@@ -209,10 +239,15 @@ object SaathiSession {
         unregisterVoiceConversation()
         voiceReplyReceiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context, intent: Intent) {
-                handleVoiceReply(intent.getStringExtra(VoiceConversationService.EXTRA_REPLY).orEmpty())
+                if (intent.action == VoiceConversationService.ACTION_VOICE_UNAVAILABLE) {
+                    Toast.makeText(context, "Voice input is unavailable. You can continue with the on-screen highlight or type a reply.", Toast.LENGTH_LONG).show()
+                } else handleVoiceReply(intent.getStringExtra(VoiceConversationService.EXTRA_REPLY).orEmpty())
             }
         }
-        val filter = IntentFilter(VoiceConversationService.ACTION_REPLY)
+        val filter = IntentFilter().apply {
+            addAction(VoiceConversationService.ACTION_REPLY)
+            addAction(VoiceConversationService.ACTION_VOICE_UNAVAILABLE)
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             app.registerReceiver(voiceReplyReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
         } else {
@@ -262,5 +297,19 @@ object SaathiSession {
                 }
             }
         }
+    }
+
+    /** A missed accessibility callback or slow network must never turn into unexplained silence. */
+    private fun startWatchdog() {
+        watchdogRunnable?.let(handler::removeCallbacks)
+        watchdogRunnable = object : Runnable {
+            override fun run() {
+                if (!active) return
+                if (latestNodes.isNotEmpty() && System.currentTimeMillis() - lastPresentedAt > 20_000L) {
+                    requestStep(latestNodes, true)
+                }
+                handler.postDelayed(this, 20_000L)
+            }
+        }.also { handler.postDelayed(it, 20_000L) }
     }
 }

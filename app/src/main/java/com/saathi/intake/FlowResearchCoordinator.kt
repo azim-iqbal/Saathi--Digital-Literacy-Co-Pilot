@@ -16,8 +16,7 @@ object FlowResearchCoordinator {
     fun prepare(brief: TaskBrief): Briefing {
         val app = brief.appOrWebsite.orEmpty().lowercase()
         val knownFlow = when {
-            app.contains("phonepe") -> listOf("Open Recharge & Pay Bills", "Choose the category", "Review details before paying")
-            app.contains("google pay") || app.contains("gpay") -> listOf("Open Bills & recharges", "Choose the biller", "Review details before paying")
+            app.contains("provider") || app.contains("website") -> listOf("Find the provider's official bill-payment page", "Review account and amount details", "Complete final payment approval yourself")
             app.contains("irctc") -> listOf("Choose journey details", "Review train and passenger details", "Confirm the booking yourself")
             app.contains("demo bill") -> listOf("Open Recharge & Pay Bills", "Choose Electricity, Water, or DTH", "Enter details and confirm yourself")
             else -> emptyList()
