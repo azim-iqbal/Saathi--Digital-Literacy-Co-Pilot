@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">Saathi</string>
+    <string name="accessibility_description">Guides you through apps without tapping or reading sensitive fields.</string>
+</resources>
