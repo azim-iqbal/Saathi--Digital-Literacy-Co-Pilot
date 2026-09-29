@@ -11,6 +11,7 @@ import android.text.TextWatcher
 import android.view.Gravity
 import android.view.View
 import android.widget.*
+import com.saathi.ui.glass.applySaathiGlass
 
 /** A safe, native demo surface: no money moves and its PIN input is a real password node. */
 class DemoBillPayActivity : Activity() {
@@ -18,7 +19,7 @@ class DemoBillPayActivity : Activity() {
         const val INK = 0xFF152A23.toInt()
         const val MUTED = 0xFF5D7069.toInt()
         const val CANVAS = 0xFFF4F8F6.toInt()
-        const val BRAND = 0xFF0B6B5A.toInt()
+        const val BRAND = 0xFF075E19.toInt()
     }
 
     private lateinit var content: LinearLayout
@@ -91,6 +92,7 @@ class DemoBillPayActivity : Activity() {
         content.addView(privacy)
 
         val pay = Button(this).apply {
+            applySaathiGlass()
             id = R.id.pay_button
             text = "Pay securely"
             isAllCaps = false
@@ -114,6 +116,7 @@ class DemoBillPayActivity : Activity() {
         title.id = R.id.success_title
         text("This is a safe demo. No real ${biller.paymentNoun} was made.", 16, MUTED)
         content.addView(Button(this).apply {
+            applySaathiGlass()
             text = "Back to home"
             isAllCaps = false
             setOnClickListener { showHome() }
@@ -146,7 +149,7 @@ class DemoBillPayActivity : Activity() {
                 false
             }
         }
-        box.addView(TextView(this).apply { text = title; textSize = 20f; setTextColor(Color.WHITE); setTypeface(null, 1) })
+        box.addView(TextView(this).apply { text = title; textSize = 20f; setTextColor(Color.WHITE); setTypeface(null, android.graphics.Typeface.BOLD) })
         box.addView(TextView(this).apply { text = subtitle; textSize = 14f; setTextColor(Color.WHITE); setPadding(0, dp(4), 0, 0) })
         content.addView(box, wide().apply { topMargin = dp(14) })
     }

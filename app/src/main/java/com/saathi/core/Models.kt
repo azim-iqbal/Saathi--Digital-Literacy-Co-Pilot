@@ -12,7 +12,8 @@ data class UiNode(
     val isPassword: Boolean,
     val isEnabled: Boolean,
     val isClickable: Boolean,
-    val isSensitive: Boolean = false
+    val isSensitive: Boolean = false,
+    val hasValue: Boolean = !text.isNullOrBlank()
 ) {
     fun fingerprintPart() = listOf(resourceId, text, description, className, isEnabled, bounds.toShortString()).joinToString("|")
 }

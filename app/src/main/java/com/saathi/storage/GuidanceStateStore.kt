@@ -2,32 +2,14 @@ package com.saathi.storage
 
 import android.content.Context
 import com.saathi.intake.TaskBrief
-import com.saathi.intake.TaskKind
 import com.saathi.language.GuidanceLanguage
 
-/** Stores only structural session state; no screenshots, credentials, PINs, or spoken audio. */
+/** Resume is an explicit user action; process death discards the task and its goal. */
 class GuidanceStateStore(context: Context) {
-    private val preferences = context.getSharedPreferences("saathi_guidance_state", Context.MODE_PRIVATE)
-
-    fun save(brief: TaskBrief, language: GuidanceLanguage, voiceEnabled: Boolean) {
-        preferences.edit()
-            .putBoolean("active", true)
-            .putString("goal", brief.goal)
-            .putString("kind", brief.kind.name)
-            .putString("destination", brief.appOrWebsite)
-            .putString("language", language.storageValue)
-            .putBoolean("voice", voiceEnabled)
-            .apply()
-    }
-
-    fun restore(): TaskBrief? = runCatching {
-        if (!preferences.getBoolean("active", false)) return null
-        TaskBrief(
-            kind = TaskKind.valueOf(preferences.getString("kind", null) ?: return null),
-            goal = preferences.getString("goal", null) ?: return null,
-            appOrWebsite = preferences.getString("destination", null)
-        )
-    }.getOrNull()
-
-    fun clear() = preferences.edit().clear().apply()
+    init { context.getSharedPreferences("saathi_guidance_state", Context.MODE_PRIVATE).edit().clear().apply() }
+    @Suppress("UNUSED_PARAMETER")
+    fun save(brief: TaskBrief, language: GuidanceLanguage, voiceEnabled: Boolean) { pending = brief }
+    fun restore(): TaskBrief? = pending
+    fun clear() { pending = null }
+    private companion object { var pending: TaskBrief? = null }
 }
