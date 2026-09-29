@@ -21,7 +21,16 @@ class HighlightOverlayService : Service() {
     private var windowManager: WindowManager? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (!Settings.canDrawOverlays(this)) return START_NOT_STICKY
+        val currentKey = com.saathi.orchestrator.SaathiSession.presentationKey()
+        if (currentKey == null || intent?.getStringExtra("presentation_key") != currentKey) {
+            stopSelf()
+            return START_NOT_STICKY
+        }
+        if (!Settings.canDrawOverlays(this)) {
+            com.saathi.orchestrator.SaathiSession.stopForPresentation(currentKey)
+            stopSelf()
+            return START_NOT_STICKY
+        }
         val target = intent?.rectExtra(EXTRA_TARGET)
         val sensitive = intent?.rectListExtra(EXTRA_SENSITIVE).orEmpty()
         val complete = intent?.getBooleanExtra(EXTRA_COMPLETE, false) ?: false
@@ -37,18 +46,36 @@ class HighlightOverlayService : Service() {
                 gravity = Gravity.TOP or Gravity.START
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
             }
-            windowManager?.addView(overlay, params)
+            try {
+                windowManager?.addView(overlay, params)
+            } catch (_: SecurityException) {
+                com.saathi.orchestrator.SaathiSession.stopForPresentation(currentKey)
+                stopSelf()
+                return START_NOT_STICKY
+            } catch (_: WindowManager.BadTokenException) {
+                com.saathi.orchestrator.SaathiSession.stopForPresentation(currentKey)
+                stopSelf()
+                return START_NOT_STICKY
+            }
             overlay?.post { overlay?.calibrate() }
         }
         overlay?.setState(target, sensitive, complete, intent?.getStringExtra(EXTRA_STATUS))
         return START_NOT_STICKY
     }
-    override fun onDestroy() { overlay?.let { windowManager?.removeView(it) }; overlay = null; super.onDestroy() }
+    override fun onDestroy() {
+        overlay?.let { view ->
+            view.dispose()
+            if (view.isAttachedToWindow) windowManager?.removeView(view)
+        }
+        overlay = null
+        super.onDestroy()
+    }
     override fun onBind(intent: Intent?): IBinder? = null
 
     companion object {
         private const val EXTRA_TARGET = "target"; private const val EXTRA_SENSITIVE = "sensitive"; private const val EXTRA_COMPLETE = "complete"; private const val EXTRA_STATUS = "status"
-        fun intent(context: Context, target: Rect?, sensitive: List<Rect>, complete: Boolean, status: String? = null) = Intent(context, HighlightOverlayService::class.java).apply {
+        fun intent(context: Context, target: Rect?, sensitive: List<Rect>, complete: Boolean, status: String? = null, presentationKey: String? = null) = Intent(context, HighlightOverlayService::class.java).apply {
+            putExtra("presentation_key", presentationKey)
             putExtra(EXTRA_TARGET, target); putParcelableArrayListExtra(EXTRA_SENSITIVE, ArrayList(sensitive)); putExtra(EXTRA_COMPLETE, complete)
             status?.let { putExtra(EXTRA_STATUS, it) }
         }
@@ -74,7 +101,7 @@ private class GuidanceOverlay(context: Context) : android.view.View(context) {
     private val labelBg = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(169, 33, 48) }
     private var target: Rect? = null; private var previousTarget: Rect? = null; private var sensitive = emptyList<Rect>(); private var complete = false; private var status: String? = null; private var pulse = 1f
     private var calibrationX = 0; private var calibrationY = 0
-    private val animator = ValueAnimator.ofFloat(0.92f, 1.10f).apply { duration = 760; repeatCount = ValueAnimator.INFINITE; repeatMode = ValueAnimator.REVERSE; interpolator = LinearInterpolator(); addUpdateListener { pulse = it.animatedValue as Float; invalidate() }; start() }
+    private val animator = ValueAnimator.ofFloat(0.92f, 1.10f).apply { duration = 760; repeatCount = ValueAnimator.INFINITE; repeatMode = ValueAnimator.REVERSE; interpolator = LinearInterpolator(); addUpdateListener { pulse = it.animatedValue as Float; invalidate() } }
     fun setState(newTarget: Rect?, newSensitive: List<Rect>, isComplete: Boolean, newStatus: String?) {
         if (newTarget != target) previousTarget = target
         target = newTarget; sensitive = newSensitive; complete = isComplete; status = newStatus; invalidate()
@@ -88,7 +115,9 @@ private class GuidanceOverlay(context: Context) : android.view.View(context) {
         invalidate()
     }
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) { super.onSizeChanged(w, h, oldw, oldh); post { calibrate() } }
-    override fun onDetachedFromWindow() { animator.cancel(); super.onDetachedFromWindow() }
+    override fun onAttachedToWindow() { super.onAttachedToWindow(); animator.start() }
+    fun dispose() { animator.cancel() }
+    override fun onDetachedFromWindow() { dispose(); super.onDetachedFromWindow() }
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         target?.let { rect ->
@@ -103,7 +132,7 @@ private class GuidanceOverlay(context: Context) : android.view.View(context) {
         }
         sensitive.forEach { rect ->
             val badge = Rect(rect.left, (rect.top - 38).coerceAtLeast(0), (rect.left + 310).coerceAtMost(width), rect.top)
-            canvas.drawRect(badge, labelBg); canvas.drawText("LOCKED - EXCLUDED FROM AI", badge.left + 10f, badge.bottom - 10f, label)
+            canvas.drawRect(badge, labelBg); canvas.drawText("PRIVATE FIELD", badge.left + 10f, badge.bottom - 10f, label)
         }
         if (complete) { canvas.drawText("DONE", width / 2f - 45f, 96f, ring.apply { style = Paint.Style.FILL; textSize = 36f }); ring.style = Paint.Style.STROKE }
     }

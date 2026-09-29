@@ -1,7 +1,12 @@
-# Architecture and privacy boundary
+# Current architecture — phase one
 
-`SaathiAccessibilityService` receives window events and turns the current accessibility hierarchy into `UiNode` values. `NodeMasker` identifies password, PIN, OTP, CVV, and MPIN fields **before** any AI request is constructed; their values and descriptions are replaced with null. `ScreenshotCapture` paints matching rectangles black before JPEG encoding.
+Android Views remain the UI. MainActivity starts an explicit session. Accessibility callbacks invalidate the previous presentation immediately; one off-main tree copy is allowed at a time with a dirty flag for the next observation. Results return to main with a session/revision/package/window ticket. The ticket must still match before evaluation. Only identified same-package practice nodes enter DemoGuide. Targets resolve to one enabled nonsensitive current node; overlays check the presentation identity again on service delivery.
 
-`SaathiSession` debounces a changing screen for 600 ms, records a fingerprint, requests a `GuideStep`, and sends its bounds to the overlay and its text to TTS. It never calls `performAction(ACTION_CLICK)` or dispatches gestures. If the fingerprint stays unchanged for five seconds after a prompt, the next response is requested with `previousStepFailed=true` and is worded as a calm redirect.
+No cloud provider or screenshot path runs. WebsiteGuide and GeminiRateLimiter are legacy unused helpers. ObservationGate is not the complete future task state machine. There is no protected backend or dual-model path. Notification Stop invalidates session state and releases session resources; device lifecycle coverage is still pending.
 
-For a repeatable demo, `DemoGuide` provides the same structured response shape as Gemini. If `GEMINI_API_KEY` is provided, `GeminiClient` sends the masked node tree and optional masked screenshot to Gemini with JSON-only output. The offline guide is retained if the network/API call fails.
+Conversation/goal state is memory-only. Preferences and generic completion categories persist. See PRIVACY.md, CURRENT_STATE_AUDIT.md and EXECUTION_PLAN.md for unresolved boundaries and migration steps.
+
+
+## Compose shell — 29 September
+
+LaunchActivity redirects to MainActivity → SaathiApp. Preferences stores onboarding/language/theme/speech/motion/haptics; Copy provides English/Hindi/Hinglish shell text. PracticeTask accepts supported synthetic task categories. The UI observes SaathiSession status and Android permission readiness. Voice transcription is user-triggered and editable before continuing. DemoBillPayActivity remains the deterministic local fixture; LegacyTaskActivity is retained and non-exported. The shell's Active/Paused/Stopped display is provisional, not the complete specification state machine. No backend was introduced.

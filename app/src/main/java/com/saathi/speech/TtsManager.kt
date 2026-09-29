@@ -43,5 +43,6 @@ class TtsManager(context: Context, private val onHindiVoiceMissing: (() -> Unit)
         val speakResult = tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "saathi-step-${System.nanoTime()}")
         if (speakResult == TextToSpeech.ERROR) { completion = null; onFinished?.invoke(false) }
     }
-    fun release() { tts.stop(); tts.shutdown() }
+    fun stop() { queued = null; completion = null; tts.stop() }
+    fun release() { stop(); tts.shutdown() }
 }

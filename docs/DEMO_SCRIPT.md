@@ -1,8 +1,5 @@
-# Two-minute demo
+# Honest practice demonstration
 
-1. Say: “Saathi is a guide, never an agent. Every tap stays in the user's hand.”
-2. Enter “Pay my electricity bill”, choose Hindi or English, and start guiding.
-3. Open Demo Bill Pay. Follow the highlighted Recharge & Pay Bills tile, then Electricity.
-4. Deliberately tap Send Money once. Saathi waits, sees the screen has not progressed, then calmly redirects.
-5. On the form, show the `LOCKED - EXCLUDED FROM AI` label over the genuine number-password PIN field. Explain that both the node content and screenshot pixels are excluded before AI receives them.
-6. Complete the payment and show the success confirmation.
+This is synthetic practice, not evidence of real-app compatibility. Install a newly built APK on a test device; enable Accessibility/overlay permissions. Choose bill practice, open Demo Bill Pay, choose a bill category and enter only made-up account, amount and PIN values. Explain that the user performs all actions and no real payment occurs. Stop from the notification and verify the highlight and speech disappear before continuing the demonstration.
+
+This script has not been executed on a device in the September 28 session. Do not present it as tested. Cloud reasoning, screen capture, dual verification and the new Compose design are unavailable. Show the Figma foundation board as design work in progress, not an app screenshot.
