@@ -5,12 +5,12 @@ import com.saathi.core.GuideStep
 import com.saathi.core.GuideTarget
 import com.saathi.core.UiNode
 
-/** Reliable local guide used for the scripted mock flow and as an API failure fallback. */
+/** Local guide restricted by the session coordinator to the synthetic practice flow. */
 object DemoGuide {
     fun next(goal: String, nodes: List<UiNode>, language: String, previousFailed: Boolean): GuideStep {
         val pick = when {
             nodes.anyId("success_title") -> complete(language)
-            nodes.anyId("account_input") && nodes.textOf("account_input").isNullOrBlank() -> instruction(
+            nodes.anyId("account_input") && !nodes.hasValue("account_input") -> instruction(
                 nodes,
                 "account_input",
                 language,
@@ -19,9 +19,9 @@ object DemoGuide {
                 "Apna ${serviceNameHinglish(nodes)} account ya subscriber number daaliye.",
                 "Account number is entered."
             )
-            nodes.anyId("amount_input") && nodes.textOf("amount_input").isNullOrBlank() -> instruction(nodes, "amount_input", language, "Enter the amount to pay.", "भुगतान की राशि दर्ज करें।", "Payment ki amount daaliye.", "Amount is entered.")
-            nodes.anyId("pin_input") && !nodes.enabled("pay_button") -> instruction(nodes, "pin_input", language, "Enter your PIN carefully. Saathi cannot see it.", "अपना PIN सावधानी से दर्ज करें। Saathi इसे नहीं देख सकता।", "Apna PIN dhyan se daaliye. Saathi ise nahi dekh sakta.", "Pay becomes available.")
-            nodes.anyId("pay_button") -> instruction(nodes, "pay_button", language, "Tap Pay to complete this bill payment.", "अब भुगतान पूरा करने के लिए Pay दबाएं।", "Payment poora karne ke liye Pay tap kijiye.", "Show payment success confirmation.")
+            nodes.anyId("amount_input") && !nodes.hasValue("amount_input") -> instruction(nodes, "amount_input", language, "Enter the amount to pay.", "भुगतान की राशि दर्ज करें।", "Payment ki amount daaliye.", "Amount is entered.")
+            nodes.anyId("pin_input") && !nodes.enabled("pay_button") -> instruction(nodes, "pin_input", language, "Enter a made-up practice PIN. Never use a real PIN here.", "अभ्यास के लिए काल्पनिक PIN डालें। असली PIN न डालें।", "Practice ke liye bana hua PIN daaliye. Asli PIN mat daaliye.", "Pay becomes available.")
+            nodes.anyId("pay_button") -> instruction(nodes, "pay_button", language, "Review the synthetic details, then tap Pay to finish this practice. No money moves.", "काल्पनिक जानकारी जाँचकर अभ्यास पूरा करने के लिए Pay दबाएँ। पैसे नहीं कटेंगे।", "Practice details check karke Pay tap kijiye. Paise nahi katenge.", "Show payment success confirmation.")
             nodes.anyId("electricity_biller") -> billerInstruction(goal, nodes, language)
             nodes.anyId("recharge_bills") -> instruction(nodes, "recharge_bills", language,
                 if (previousFailed) "That’s alright. Tap Recharge & Pay Bills, the green tile at the top." else "Tap Recharge & Pay Bills, the green tile at the top.",
@@ -43,7 +43,7 @@ object DemoGuide {
     }
 
     private fun List<UiNode>.anyId(id: String) = any { it.resourceId?.endsWith("/$id") == true }
-    private fun List<UiNode>.textOf(id: String) = firstOrNull { it.resourceId?.endsWith("/$id") == true }?.text
+    private fun List<UiNode>.hasValue(id: String) = firstOrNull { it.resourceId?.endsWith("/$id") == true }?.hasValue == true
     private fun List<UiNode>.enabled(id: String) = firstOrNull { it.resourceId?.endsWith("/$id") == true }?.isEnabled == true
     private fun serviceName(nodes: List<UiNode>) = when {
         nodes.containsText("Water bill") -> "water"
@@ -66,7 +66,7 @@ object DemoGuide {
         return GuideStep(pick(language, english, hindi, hinglish), language, GuideTarget(node.bounds, node.resourceId, id), expected, false)
     }
     private fun complete(language: String) = GuideStep(
-        pick(language, "Your payment is complete. Well done!", "भुगतान पूरा हो गया। बहुत बढ़िया!", "Payment poora ho gaya. Bahut badhiya!"),
+        pick(language, "Practice complete. No real payment was made.", "अभ्यास पूरा हुआ। कोई असली भुगतान नहीं हुआ।", "Practice poori hui. Koi asli payment nahi hui."),
         language, null, "Payment success screen is visible.", true
     )
     private fun pick(language: String, english: String, hindi: String, hinglish: String) = when (language) {

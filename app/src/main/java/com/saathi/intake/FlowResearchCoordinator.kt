@@ -23,9 +23,9 @@ object FlowResearchCoordinator {
         }
 
         return if (knownFlow.isNotEmpty()) {
-            Briefing("On-device app profile", "I prepared a short checklist for ${brief.appOrWebsite}. I will still follow the live screen, not a fixed script.", knownFlow)
+            Briefing("On-device app profile", "This is a general checklist, not a verified workflow for ${brief.appOrWebsite}. Live guidance is currently limited to local practice.", knownFlow)
         } else {
-            Briefing("Live screen preparation", "I will use the app's visible screen and safe on-screen context to adapt each step as you go.", emptyList())
+            Briefing("Live screen preparation", "This app or website has not been verified. Live guidance is currently limited to local practice.", emptyList())
         }
     }
 }

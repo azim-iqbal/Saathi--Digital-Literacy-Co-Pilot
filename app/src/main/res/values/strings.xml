@@ -1,4 +1,4 @@
 <resources>
-    <string name="app_name">Saathi</string>
-    <string name="accessibility_description">Guides you through apps without tapping or reading sensitive fields.</string>
+    <string name="app_name" translatable="false">Saathi</string>
+    <string name="accessibility_description">Highlights controls in local practice. You perform every tap. Sensitive-field filtering is not perfect.</string>
 </resources>

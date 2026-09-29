@@ -20,6 +20,19 @@ class DemoGuideTest {
         assertEquals("dth_biller", step.target?.description)
     }
 
+    @Test
+    fun `masked filled account field advances without reading its value`() {
+        val nodes = listOf(node("account_input").copy(isSensitive = true, hasValue = true), node("amount_input"))
+        val step = DemoGuide.next("Pay bill", nodes, "en-US", false)
+        assertEquals("amount_input", step.target?.description)
+    }
+
+    @Test
+    fun `synthetic success never claims a real payment`() {
+        val step = DemoGuide.next("Pay bill", listOf(node("success_title")), "en-US", false)
+        assertEquals("Practice complete. No real payment was made.", step.speechText)
+    }
+
     private fun billerScreen() = listOf(
         node("electricity_biller"),
         node("water_biller"),
