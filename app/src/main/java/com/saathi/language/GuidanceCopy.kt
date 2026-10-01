@@ -17,9 +17,9 @@ object GuidanceCopy {
         GuidanceLanguage.HINGLISH -> HinglishTemplates.lowConfidence
     }
     fun ttsSetup(language: GuidanceLanguage) = when (language) {
-        GuidanceLanguage.ENGLISH -> "The Hindi voice is not installed. You can install it in Text-to-Speech settings; English voice will work for now."
-        GuidanceLanguage.HINDI -> "हिंदी आवाज़ इंस्टॉल नहीं है। आप इसे Text-to-Speech सेटिंग्स में इंस्टॉल कर सकते हैं; अभी अंग्रेज़ी आवाज़ काम करेगी।"
-        GuidanceLanguage.HINGLISH -> HinglishTemplates.ttsSetup
+        GuidanceLanguage.ENGLISH -> "The selected voice is unavailable. Install it in Text-to-Speech settings, or use text guidance."
+        GuidanceLanguage.HINDI -> "चुनी गई आवाज़ उपलब्ध नहीं है। उसे Text-to-Speech सेटिंग्स में इंस्टॉल करें या लिखित मार्गदर्शन चुनें।"
+        GuidanceLanguage.HINGLISH -> "Chuni hui voice available nahi hai. Text-to-Speech settings mein install karein, ya text guidance use karein."
     }
 
     fun voiceIntro(language: GuidanceLanguage) = when (language) {
@@ -35,9 +35,9 @@ object GuidanceCopy {
     }
 
     fun privateField(language: GuidanceLanguage) = when (language) {
-        GuidanceLanguage.ENGLISH -> "This is a private field. Enter it yourself; Saathi will not listen to or see the value."
-        GuidanceLanguage.HINDI -> "यह निजी जानकारी का फ़ील्ड है। इसे आप खुद भरें; Saathi इसकी कीमत न सुनेगा, न देखेगा।"
-        GuidanceLanguage.HINGLISH -> "Yeh private field hai. Isse aap khud bhariye; Saathi value ko na sunega, na dekhega."
+        GuidanceLanguage.ENGLISH -> "Enter this privately. The conversation microphone is off while this form is visible."
+        GuidanceLanguage.HINDI -> "इसे निजी रूप से स्वयं भरें। यह फॉर्म दिखने के दौरान बातचीत का माइक बंद है।"
+        GuidanceLanguage.HINGLISH -> "Ise privately khud bhariye. Yeh form dikhne tak conversation mic band hai."
     }
 
     fun guidancePaused(language: GuidanceLanguage) = when (language) {
@@ -47,14 +47,21 @@ object GuidanceCopy {
     }
 
     fun acknowledged(language: GuidanceLanguage) = when (language) {
-        GuidanceLanguage.ENGLISH -> "Great. Take your time and use the highlighted control. I will speak again after the screen changes."
-        GuidanceLanguage.HINDI -> "बहुत बढ़िया। आराम से हाइलाइट किए गए विकल्प का उपयोग करें। स्क्रीन बदलने पर मैं फिर बोलूँगा।"
-        GuidanceLanguage.HINGLISH -> "Bahut badhiya. Aaram se highlighted control use kijiye. Screen badalne par main phir bolunga."
+        GuidanceLanguage.ENGLISH -> "Take your time. I'll check the screen after your next tap. You can ask me to repeat, or say help."
+        GuidanceLanguage.HINDI -> "आराम से करें। आपके अगले टैप के बाद मैं स्क्रीन जाँचूँगा। आप दोबारा या मदद बोल सकते हैं।"
+        GuidanceLanguage.HINGLISH -> "Aaram se kijiye. Aapke agle tap ke baad main screen check karunga. Aap repeat ya help bol sakte hain."
     }
 
-    fun voiceFallback(language: GuidanceLanguage) = when (language) {
-        GuidanceLanguage.ENGLISH -> "I heard you. Please say understood, help, or cancel."
-        GuidanceLanguage.HINDI -> "मैंने सुना। कृपया समझ गया, मदद, या रद्द बोलें।"
-        GuidanceLanguage.HINGLISH -> "Maine suna. Please samajh gaya, help, ya cancel boliye."
+    fun voiceFallback(language: GuidanceLanguage, live: Boolean = false): String {
+        if (live) return when (language) {
+            GuidanceLanguage.ENGLISH -> "To change the option, say find followed by its visible name, such as find Help. You can also say repeat, pause or stop. I cannot plan multi-step tasks yet."
+            GuidanceLanguage.HINDI -> "विकल्प बदलने के लिए उसका नाम और खोजो बोलें, जैसे मदद खोजो। आप दोबारा, रोकें या रद्द भी बोल सकते हैं। मैं अभी कई कदमों वाले काम की योजना नहीं बना सकता।"
+            GuidanceLanguage.HINGLISH -> "Option badalne ke liye uska naam aur dhundo boliye, jaise Help dhundo. Repeat, pause ya stop bhi bol sakte hain. Abhi main multi-step task plan nahi kar sakta."
+        }
+        return when (language) {
+        GuidanceLanguage.ENGLISH -> "I'm a local screen guide for now. I can repeat the current step or pause. To change your request, open the Saathi button."
+        GuidanceLanguage.HINDI -> "अभी मैं स्क्रीन पर स्थानीय मदद करता हूँ। मैं कदम दोहरा सकता हूँ या रुक सकता हूँ। अनुरोध बदलने के लिए साथी बटन खोलें।"
+        GuidanceLanguage.HINGLISH -> "Abhi main local screen guide hoon. Step repeat ya pause kar sakta hoon. Request badalne ke liye Saathi button kholiye."
+        }
     }
 }

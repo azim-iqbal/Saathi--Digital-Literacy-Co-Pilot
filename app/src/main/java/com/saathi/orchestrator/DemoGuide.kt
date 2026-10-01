@@ -8,21 +8,36 @@ import com.saathi.core.UiNode
 /** Local guide restricted by the session coordinator to the synthetic practice flow. */
 object DemoGuide {
     fun next(goal: String, nodes: List<UiNode>, language: String, previousFailed: Boolean): GuideStep {
+        val expected = when {
+            goal.contains("water", true) || goal.contains("पानी") -> "practice_water"
+            goal.contains("dth", true) || goal.contains("tv", true) || goal.contains("recharge", true) -> "practice_dth"
+            else -> "practice_electricity"
+        }
+        val categories = setOf("practice_water", "practice_dth", "practice_electricity")
+        val actual = categories.filter { nodes.anyId(it) }
+        if (nodes.anyId("practice_detour") || (actual.isNotEmpty() && actual != listOf(expected))) {
+            val recovery = instruction(nodes, "practice_back", language,
+                "That's a different path. Tap Back to choices; then I'll point out the option for your chosen practice.",
+                "यह दूसरा रास्ता है। Back to choices दबाएँ; फिर मैं आपके चुने अभ्यास का विकल्प दिखाऊँगा।",
+                "Yeh doosra raasta hai. Back to choices tap kijiye; phir main aapki practice ka option dikhaunga.",
+                "Return to choices for the selected practice.")
+            return recovery.copy(correctionNote = recovery.speechText)
+        }
         val pick = when {
             nodes.anyId("success_title") -> complete(language)
             nodes.anyId("account_input") && !nodes.hasValue("account_input") -> instruction(
                 nodes,
                 "account_input",
                 language,
-                "Enter your ${serviceName(nodes)} account or subscriber number.",
-                "अपना ${serviceNameHindi(nodes)} खाता या सब्सक्राइबर नंबर दर्ज करें।",
-                "Apna ${serviceNameHinglish(nodes)} account ya subscriber number daaliye.",
+                "Enter a made-up ${serviceName(nodes)} account or subscriber number for practice.",
+                "अभ्यास के लिए काल्पनिक ${serviceNameHindi(nodes)} खाता या सब्सक्राइबर नंबर दर्ज करें।",
+                "Practice ke liye bana hua ${serviceNameHinglish(nodes)} account ya subscriber number daaliye.",
                 "Account number is entered."
             )
             nodes.anyId("amount_input") && !nodes.hasValue("amount_input") -> instruction(nodes, "amount_input", language, "Enter the amount to pay.", "भुगतान की राशि दर्ज करें।", "Payment ki amount daaliye.", "Amount is entered.")
             nodes.anyId("pin_input") && !nodes.enabled("pay_button") -> instruction(nodes, "pin_input", language, "Enter a made-up practice PIN. Never use a real PIN here.", "अभ्यास के लिए काल्पनिक PIN डालें। असली PIN न डालें।", "Practice ke liye bana hua PIN daaliye. Asli PIN mat daaliye.", "Pay becomes available.")
-            nodes.anyId("pay_button") -> instruction(nodes, "pay_button", language, "Review the synthetic details, then tap Pay to finish this practice. No money moves.", "काल्पनिक जानकारी जाँचकर अभ्यास पूरा करने के लिए Pay दबाएँ। पैसे नहीं कटेंगे।", "Practice details check karke Pay tap kijiye. Paise nahi katenge.", "Show payment success confirmation.")
-            nodes.anyId("electricity_biller") -> billerInstruction(goal, nodes, language)
+            nodes.anyId("pay_button") -> instruction(nodes, "pay_button", language, "Review the made-up details, then tap Finish practice. No money moves.", "काल्पनिक जानकारी जाँचकर Finish practice दबाएँ। पैसे नहीं कटेंगे।", "Practice details check karke Finish practice tap kijiye. Paise nahi katenge.", "Show practice completion.")
+            nodes.anyId("electricity_biller") || nodes.anyId("water_biller") || nodes.anyId("dth_biller") -> billerInstruction(goal, nodes, language)
             nodes.anyId("recharge_bills") -> instruction(nodes, "recharge_bills", language,
                 if (previousFailed) "That’s alright. Tap Recharge & Pay Bills, the green tile at the top." else "Tap Recharge & Pay Bills, the green tile at the top.",
                 if (previousFailed) "कोई बात नहीं। ऊपर हरे Recharge & Pay Bills टाइल को दबाएं।" else "ऊपर हरे Recharge & Pay Bills टाइल को दबाएं।",
@@ -62,8 +77,9 @@ object DemoGuide {
     }
     private fun List<UiNode>.containsText(value: String) = any { it.text?.contains(value, ignoreCase = true) == true || it.description?.contains(value, ignoreCase = true) == true }
     private fun instruction(nodes: List<UiNode>, id: String, language: String, english: String, hindi: String, hinglish: String = english, expected: String): GuideStep {
-        val node = nodes.first { it.resourceId?.endsWith("/$id") == true }
-        return GuideStep(pick(language, english, hindi, hinglish), language, GuideTarget(node.bounds, node.resourceId, id), expected, false)
+        val node = nodes.singleOrNull { it.resourceId == "com.saathi:id/$id" && it.isEnabled }
+        return GuideStep(pick(language, english, hindi, hinglish), language,
+            node?.let { GuideTarget(it.bounds, it.resourceId, id) }, expected, false)
     }
     private fun complete(language: String) = GuideStep(
         pick(language, "Practice complete. No real payment was made.", "अभ्यास पूरा हुआ। कोई असली भुगतान नहीं हुआ।", "Practice poori hui. Koi asli payment nahi hui."),

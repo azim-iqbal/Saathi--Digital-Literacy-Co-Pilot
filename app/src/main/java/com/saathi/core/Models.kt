@@ -13,12 +13,14 @@ data class UiNode(
     val isEnabled: Boolean,
     val isClickable: Boolean,
     val isSensitive: Boolean = false,
-    val hasValue: Boolean = !text.isNullOrBlank()
+    val hasValue: Boolean = !text.isNullOrBlank(),
+    val clickableAncestorBounds: Rect? = null,
+    val isEditable: Boolean = false
 ) {
     fun fingerprintPart() = listOf(resourceId, text, description, className, isEnabled, bounds.toShortString()).joinToString("|")
 }
 
-data class GuideTarget(val bounds: Rect, val resourceId: String? = null, val description: String)
+data class GuideTarget(val bounds: Rect, val resourceId: String? = null, val description: String, val nodeIndex: Int? = null)
 
 data class GuideStep(
     val speechText: String,
@@ -33,3 +35,20 @@ data class GuideStep(
 enum class GuideAction { GUIDE, REFUSE }
 
 data class StepHistory(val instruction: String, val expectedOutcome: String)
+
+/**
+ * A user-facing session state. This is intentionally separate from speech state so the UI can
+ * describe what Saathi is doing without claiming that it is listening or processing remotely.
+ */
+enum class GuidanceSessionState {
+    STOPPED,
+    PREPARING,
+    OBSERVING,
+    ANALYSING,
+    GUIDING,
+    WAITING_FOR_PRACTICE,
+    SENSITIVE_HANDOVER,
+    PAUSED,
+    COMPLETED,
+    ERROR
+}

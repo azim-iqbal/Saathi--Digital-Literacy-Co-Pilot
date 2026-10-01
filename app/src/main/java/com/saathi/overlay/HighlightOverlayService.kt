@@ -19,11 +19,13 @@ import android.animation.ValueAnimator
 class HighlightOverlayService : Service() {
     private var overlay: GuidanceOverlay? = null
     private var windowManager: WindowManager? = null
+    override fun onCreate() { super.onCreate(); instance = this }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val currentKey = com.saathi.orchestrator.SaathiSession.presentationKey()
         if (currentKey == null || intent?.getStringExtra("presentation_key") != currentKey) {
-            stopSelf()
+            // An obsolete intent must not remove a newer marker already attached to this service.
+            if (currentKey == null) { clearPresentation(); stopSelf(startId) }
             return START_NOT_STICKY
         }
         if (!Settings.canDrawOverlays(this)) {
@@ -44,7 +46,12 @@ class HighlightOverlayService : Service() {
                 android.graphics.PixelFormat.TRANSLUCENT
             ).apply {
                 gravity = Gravity.TOP or Gravity.START
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+                title = "Saathi guidance"
+                // Android 12+ blocks touches through an opaque application-overlay window.
+                alpha = if (Build.VERSION.SDK_INT >= 31) minOf(.7f,
+                    getSystemService(android.hardware.input.InputManager::class.java).maximumObscuringOpacityForTouch) else .7f
+                if (Build.VERSION.SDK_INT >= 30) layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+                else if (Build.VERSION.SDK_INT >= 28) layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
             }
             try {
                 windowManager?.addView(overlay, params)
@@ -65,14 +72,24 @@ class HighlightOverlayService : Service() {
     override fun onDestroy() {
         overlay?.let { view ->
             view.dispose()
-            if (view.isAttachedToWindow) windowManager?.removeView(view)
+            if (view.isAttachedToWindow) runCatching { windowManager?.removeView(view) }
         }
         overlay = null
+        if (instance === this) instance = null
         super.onDestroy()
     }
     override fun onBind(intent: Intent?): IBinder? = null
 
     companion object {
+        private var instance: HighlightOverlayService? = null
+        fun ownsAccessibilityWindow(id: Int): Boolean {
+            val view = instance?.overlay ?: return false
+            if (id < 0 || !view.isAttachedToWindow) return false
+            val node = view.createAccessibilityNodeInfo()
+            return try { node.windowId == id } finally { @Suppress("DEPRECATION") node.recycle() }
+        }
+        /** Clear pixels synchronously without creating window-add/remove accessibility feedback. */
+        fun clearPresentation() { instance?.overlay?.setState(null, emptyList(), false, null) }
         private const val EXTRA_TARGET = "target"; private const val EXTRA_SENSITIVE = "sensitive"; private const val EXTRA_COMPLETE = "complete"; private const val EXTRA_STATUS = "status"
         fun intent(context: Context, target: Rect?, sensitive: List<Rect>, complete: Boolean, status: String? = null, presentationKey: String? = null) = Intent(context, HighlightOverlayService::class.java).apply {
             putExtra("presentation_key", presentationKey)
@@ -95,16 +112,27 @@ private fun Intent.rectListExtra(key: String): ArrayList<Rect>? = if (Build.VERS
 }
 
 private class GuidanceOverlay(context: Context) : android.view.View(context) {
-    private val ring = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(20, 108, 90); style = Paint.Style.STROKE; strokeWidth = 5f }
+    private val density = resources.displayMetrics.density
+    private val ring = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(8, 121, 0); style = Paint.Style.STROKE; strokeWidth = 2.5f * density }
+    private val contrast = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE; style = Paint.Style.STROKE; strokeWidth = 4.5f * density }
     private val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(28, 20, 108, 90); style = Paint.Style.FILL }
     private val label = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE; textSize = 24f; typeface = android.graphics.Typeface.DEFAULT_BOLD }
     private val labelBg = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(169, 33, 48) }
     private var target: Rect? = null; private var previousTarget: Rect? = null; private var sensitive = emptyList<Rect>(); private var complete = false; private var status: String? = null; private var pulse = 1f
     private var calibrationX = 0; private var calibrationY = 0
-    private val animator = ValueAnimator.ofFloat(0.92f, 1.10f).apply { duration = 760; repeatCount = ValueAnimator.INFINITE; repeatMode = ValueAnimator.REVERSE; interpolator = LinearInterpolator(); addUpdateListener { pulse = it.animatedValue as Float; invalidate() } }
+    private val animator = ValueAnimator.ofFloat(1f, 1.08f, 1f).apply {
+        duration = 900
+        addUpdateListener { pulse = it.animatedValue as Float; invalidate() }
+    }
     fun setState(newTarget: Rect?, newSensitive: List<Rect>, isComplete: Boolean, newStatus: String?) {
+        val changed = newTarget != target
         if (newTarget != target) previousTarget = target
         target = newTarget; sensitive = newSensitive; complete = isComplete; status = newStatus; invalidate()
+        if (changed) {
+            animator.cancel(); pulse = 1f
+            if (newTarget != null && isAttachedToWindow && ValueAnimator.areAnimatorsEnabled() &&
+                !com.saathi.ui.Preferences(context).reducedMotion) animator.start()
+        }
     }
     fun calibrate() {
         val location = IntArray(2)
@@ -115,7 +143,7 @@ private class GuidanceOverlay(context: Context) : android.view.View(context) {
         invalidate()
     }
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) { super.onSizeChanged(w, h, oldw, oldh); post { calibrate() } }
-    override fun onAttachedToWindow() { super.onAttachedToWindow(); animator.start() }
+    override fun onAttachedToWindow() { super.onAttachedToWindow() }
     fun dispose() { animator.cancel() }
     override fun onDetachedFromWindow() { dispose(); super.onDetachedFromWindow() }
     override fun onDraw(canvas: Canvas) {
@@ -124,11 +152,18 @@ private class GuidanceOverlay(context: Context) : android.view.View(context) {
             drawTargetAnnotation(canvas, rect)
         }
         status?.let { text ->
-            val top = height * .18f
-            val panel = RectF(20f, top, width - 20f, top + 130f)
-            canvas.drawRoundRect(panel, 24f, 24f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(13, 92, 92) })
-            val words = text.chunked(42)
-            words.take(3).forEachIndexed { index, line -> canvas.drawText(line, panel.left + 16f, panel.top + 34f + index * 28f, label) }
+            val padding = 16f * density
+            val textPaint = android.text.TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = Color.WHITE; textSize = 16 * resources.displayMetrics.scaledDensity
+            }
+            val layout = android.text.StaticLayout.Builder.obtain(text, 0, text.length, textPaint,
+                (width - padding * 4).toInt().coerceAtLeast(1)).setMaxLines(5)
+                .setEllipsize(android.text.TextUtils.TruncateAt.END).build()
+            val top = if ((target?.centerY() ?: 0) > height / 2) 72 * density
+                else (height - layout.height - padding * 2 - 100 * density).coerceAtLeast(padding)
+            val panel = RectF(padding, top, width - padding, top + layout.height + padding * 2)
+            canvas.drawRoundRect(panel, 24 * density, 24 * density, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(13, 70, 42) })
+            canvas.save(); canvas.translate(panel.left + padding, panel.top + padding); layout.draw(canvas); canvas.restore()
         }
         sensitive.forEach { rect ->
             val badge = Rect(rect.left, (rect.top - 38).coerceAtLeast(0), (rect.left + 310).coerceAtMost(width), rect.top)
@@ -141,14 +176,17 @@ private class GuidanceOverlay(context: Context) : android.view.View(context) {
         val inset = 8f * pulse
         val outline = RectF(target.left + calibrationX - inset, target.top + calibrationY - inset, target.right + calibrationX + inset, target.bottom + calibrationY + inset)
         canvas.drawRoundRect(outline, 24f, 24f, fill)
+        canvas.drawRoundRect(outline, 24f, 24f, contrast)
         canvas.drawRoundRect(outline, 24f, 24f, ring)
 
-        val tagWidth = 118f
-        val tagHeight = 38f
-        val tagTop = (outline.top - tagHeight - 10f).coerceAtLeast(8f)
-        val tag = RectF(outline.left, tagTop, outline.left + tagWidth, tagTop + tagHeight)
+        label.textSize = 12f * resources.displayMetrics.scaledDensity
+        val tagWidth = label.measureText("NEXT STEP") + 24 * density
+        val tagHeight = 28 * density
+        val tagTop = (outline.top - tagHeight - 6 * density).coerceAtLeast(8 * density)
+        val tagLeft = outline.left.coerceIn(8 * density, (width - tagWidth - 8 * density).coerceAtLeast(8 * density))
+        val tag = RectF(tagLeft, tagTop, tagLeft + tagWidth, tagTop + tagHeight)
         canvas.drawRoundRect(tag, tagHeight / 2, tagHeight / 2, ring.apply { style = Paint.Style.FILL })
-        canvas.drawText("NEXT STEP", tag.left + 14f, tag.bottom - 12f, label)
+        canvas.drawText("NEXT STEP", tag.left + 12 * density, tag.centerY() - (label.fontMetrics.ascent + label.fontMetrics.descent) / 2, label)
         // A small pointer makes the click zone easier to locate than a ring alone.
         val pointerX = outline.right - 12f
         val pointerY = outline.bottom + 14f

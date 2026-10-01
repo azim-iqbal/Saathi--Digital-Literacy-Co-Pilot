@@ -1,6 +1,6 @@
 # Saathi — Digital Literacy Co-Pilot
 
-Saathi helps people learn screen navigation while performing every tap themselves. **This branch currently supports local synthetic Bill Pay practice only.** Real-app guidance, cloud AI and screen capture are disabled while safety and architecture work proceeds.
+Saathi helps people learn screen navigation while performing every tap themselves. **This branch supports synthetic Bill Pay practice and an experimental local option finder for accessible apps/browser controls.** The live finder matches a named visible option; universal workflows and screen capture remain unavailable. A debug-only backend connection now supports separately consented Gemini/Groq navigation once server credentials and model IDs are supplied; no live model was configured or tested.
 
 The September 2026 redesign is **in progress**, not finished. [Progress and resume plan](docs/EXECUTION_PLAN.md) · [Audit](docs/CURRENT_STATE_AUDIT.md) · [Documentation index](docs/README.md) · [Figma designs](https://www.figma.com/design/vx2M28p625yZQTAzcTLlQj)
 
@@ -23,3 +23,9 @@ The navigation now uses a floating capsule with spring-driven selection and swip
 Latest UI phase: shared Liquid Glass controls and branded header are implemented in the Android shell. See [scope and remaining parity](docs/GLASS_UI.md), [current verification](docs/TEST_RESULTS.md), and [dark Home screenshot](docs/screenshots/2026-09-29-glass/home-dark.png). Native/legacy screen parity, Figma synchronization and physical-device performance remain open.
 
 The latest launch update adds shared vector brand assets, adaptive/themed launcher support and a centered animated opening. [Launch details and limits](docs/LAUNCH_EXPERIENCE.md).
+
+The 30 September continuation adds explicit background practice conversation with on-device speech turns and notification controls, plus wrong-category/detour recovery anchored to Back to choices. This is a local command-based assistant; natural AI chat remains pending; external guidance is experimental. [Voice behavior and verification limits](docs/VOICE_CONVERSATION.md).
+
+The Python gateway is connected to the debug app for mock practice and optional paired-model navigation. Gemini/Groq REST adapters, strict validation, persistent aggregate AI call caps, cancellation and current-screen grounding are implemented. Credentials/model IDs remain placeholders; release connectivity and production hosting/authentication remain open. [Local setup and production gaps](docs/SETUP.md).
+
+Choose **Help in apps & browsers** for the floating assistant: type or dictate a visible option name, select **Text only** or **Text + voice**, then start and open your app. The movable Saathi button returns to the request panel. [Implemented behavior and compatibility limits](docs/LIVE_ASSISTANT.md).

@@ -6,6 +6,34 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class DemoGuideTest {
+    @Test fun wrongCategoryReturnsToChoicesInsteadOfFillingAnotherBill() {
+        val step = DemoGuide.next("Pay my water bill",
+            listOf(node("practice_electricity"), node("practice_back"), node("account_input")), "en-IN", false)
+        assertEquals("practice_back", step.target?.description)
+        org.junit.Assert.assertNotNull(step.correctionNote)
+        org.junit.Assert.assertFalse(step.goalComplete)
+    }
+    @Test fun wrongCategorySuccessDoesNotCompleteSelectedTask() {
+        val step = DemoGuide.next("Pay my water bill",
+            listOf(node("practice_dth"), node("practice_back"), node("success_title")), "en-IN", false)
+        assertEquals("practice_back", step.target?.description)
+        org.junit.Assert.assertFalse(step.goalComplete)
+    }
+    @Test fun missingRecoveryTargetNeverThrowsOrInventsCoordinates() {
+        val step = DemoGuide.next("Pay my water bill", listOf(node("practice_detour")), "hi-IN", false)
+        org.junit.Assert.assertNull(step.target)
+        org.junit.Assert.assertNotNull(step.correctionNote)
+    }
+    @Test fun backFromDetourResolvesTheOriginalCategory() {
+        val goal = "Recharge my DTH"
+        val detour = DemoGuide.next(goal, listOf(node("practice_detour"), node("practice_back")), "hinglish", false)
+        assertEquals("practice_back", detour.target?.description)
+        assertEquals("dth_biller", DemoGuide.next(goal, billerScreen(), "hinglish", false).target?.description)
+    }
+    @Test fun partialBillerTreeHasNoCrashingOrGuessedTarget() {
+        val step = DemoGuide.next("Pay my water bill", listOf(node("electricity_biller")), "en-IN", false)
+        org.junit.Assert.assertNull(step.target)
+    }
     @Test
     fun `water goal highlights the water category`() {
         val step = DemoGuide.next("Pay my water bill", billerScreen(), "en-US", previousFailed = false)

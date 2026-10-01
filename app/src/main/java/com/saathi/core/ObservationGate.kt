@@ -3,7 +3,8 @@ package com.saathi.core
 /** Main-thread-owned identity. An old tree must never become current after Stop or navigation. */
 class ObservationGate {
     data class Ticket(val session: Long, val revision: Long, val packageName: String, val windowId: Int)
-    private var session = 0L
+    // Pending notification intents may outlive process death. Do not reuse "session 1" on restart.
+    private var session = java.util.UUID.randomUUID().mostSignificantBits
     private var revision = 0L
     private var active = false
     private var current: Ticket? = null

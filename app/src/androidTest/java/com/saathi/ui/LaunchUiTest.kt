@@ -39,8 +39,15 @@ class LaunchUiTest {
     }
 
     @Test fun returningFromBackgroundKeepsContentUsable() {
-        ui.activityRule.scenario.moveToState(Lifecycle.State.CREATED)
-        ui.activityRule.scenario.moveToState(Lifecycle.State.RESUMED)
+        val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
+        fun shell(command: String) {
+            android.os.ParcelFileDescriptor.AutoCloseInputStream(automation.executeShellCommand(command)).use { it.readBytes() }
+        }
+        // Exercise the actual Home/launcher route; forcing RESUMED cannot bring a background task forward.
+        shell("input keyevent KEYCODE_HOME")
+        ui.waitUntil(10_000) { ui.activityRule.scenario.state == Lifecycle.State.CREATED }
+        shell("am start -W -n com.saathi/.LaunchActivity -f 0x10020000")
+        ui.waitUntil(10_000) { ui.activityRule.scenario.state == Lifecycle.State.RESUMED }
         ui.onNodeWithText("Saathi").assertIsDisplayed()
     }
 }

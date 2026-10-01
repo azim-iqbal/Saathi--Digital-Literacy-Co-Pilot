@@ -4,6 +4,8 @@ Latest source: [user brief](specs/Liquid-glass-brief-2026-09-29.txt). References
 
 ## Implemented
 
+- 1 October continuation: main shell and assistant share `SaathiColors` and `SaathiBrand`; existing main palette/header are unchanged. Assistant mode chips, content width and reduced-motion policy now align with the shell. Existing glass components retained, with an opaque assistant fallback. See TEST_RESULTS.md for sampled light/dark evidence.
+
 - Shared Compose `GlassPanel`, `GlassButton`, `GlassChevron`, `GlassTokens` and environment in app/src/main/java/com/saathi/ui/glass. No new dependencies or architecture replacement.
 - Primary and secondary full-width actions, compact header actions, Practice CTA, privacy confirmation buttons, feature/task/settings cards, language/theme choices, switches and task input container use the material system. Radio/switch affordances retain standard Android semantics.
 - Broad pills: 64dp minimum height; compact actions: 48dp. Text wraps and grows rather than being ellipsized. Chevron mirrors for RTL. Content column caps at720dp; floating navigation caps at600dp. Header wraps at narrow/large-text sizes.
@@ -24,6 +26,7 @@ Latest source: [user brief](specs/Liquid-glass-brief-2026-09-29.txt). References
 | Privacy dialog | Shared glass buttons; intentional opaque surface |
 | Settings choices/switches and action cards | Glass containers, native semantics and readable controls |
 | Bottom dock/category tabs | Existing custom navigation preserved |
+| Floating assistant / live intake | Shared glass buttons and panels, mode chips, branded native edge bubble. New panel localization, Figma parity and device accessibility checks remain pending; see LIVE_ASSISTANT.md. |
 | Native DemoBillPayActivity payment/home buttons | Styled opaque fallback; full native form/card/theme redesign and new visual verification pending |
 | LegacyTaskActivity ImageButtons, language/reply chips and system language dialog | Historical activity has no route from current Compose shell; still old styling. Audit found these explicitly; do not claim every repository control is migrated. Inspect whether this retained activity should be retired or brought into the new system before changing it. |
 | TermsActivity | Historical standalone native text page; full visual parity pending |

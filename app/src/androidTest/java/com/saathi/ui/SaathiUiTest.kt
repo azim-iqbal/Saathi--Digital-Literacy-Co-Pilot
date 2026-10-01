@@ -29,6 +29,20 @@ import java.io.File
 
 @RunWith(AndroidJUnit4::class)
 class SaathiUiTest {
+    @Test fun speechSpeedPersistsWithoutStartingConversation() {
+        launch()
+        ui.onNodeWithTag("nav-settings").performClick()
+        ui.onNodeWithText("Spoken guidance").performScrollTo().performClick()
+        ui.onNodeWithText("Slow").performScrollTo().performClick()
+        ui.onNodeWithText("Preview voice").performScrollTo().assertHasClickAction()
+        assertEquals(.75f, Preferences(ui.activity).speechRate)
+        assertEquals(com.saathi.speech.VoicePhase.OFF, com.saathi.speech.VoiceConversationService.phase.value)
+        screenshot("voice-settings")
+        ui.activityRule.scenario.recreate()
+        assertEquals(.75f, Preferences(ui.activity).speechRate)
+        ui.onNodeWithTag("nav-settings").performClick()
+        ui.onNodeWithText("Slow").performScrollTo().assertIsSelected()
+    }
     @get:Rule val ui = createAndroidComposeRule<MainActivity>()
     private fun launch(dark: Boolean = false, hindi: Boolean = false, scale: Float = 1f, welcome: Boolean = false, motion: Boolean = false, narrow: Boolean = false) {
         val generation = System.nanoTime()
@@ -39,6 +53,7 @@ class SaathiUiTest {
                 theme = if (dark) "Dark" else "Light"
                 reducedMotion = !motion
                 reducedTransparency = false
+                speech = false
             }
             ui.activity.setContent {
                 key(generation) {

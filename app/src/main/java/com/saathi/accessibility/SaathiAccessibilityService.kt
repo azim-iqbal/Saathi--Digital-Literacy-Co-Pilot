@@ -16,6 +16,18 @@ class SaathiAccessibilityService : AccessibilityService() {
     private var copying = false
     private var dirty = false
 
+    override fun onServiceConnected() {
+        super.onServiceConnected()
+        instance = this
+    }
+
+    /** A changed request needs a fresh tree even when the other app has not emitted an event. */
+    private fun refreshScreen() {
+        SaathiSession.invalidateScreen()
+        dirty = true
+        scheduleCopy()
+    }
+
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
         if (!SaathiSession.isActive()) return
         if (getSystemService(KeyguardManager::class.java).isKeyguardLocked) { SaathiSession.stop(); return }
@@ -24,9 +36,14 @@ class SaathiAccessibilityService : AccessibilityService() {
                 AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED, AccessibilityEvent.TYPE_VIEW_SCROLLED,
                 AccessibilityEvent.TYPE_VIEW_CLICKED, AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED
             )) return
-        SaathiSession.invalidateScreen()
-        dirty = true
-        scheduleCopy()
+        // Our non-focusable overlay can announce a delayed window-state event. It has not
+        // changed the underlying screen; re-observing would interrupt speech/model work.
+        // Match actual attached window IDs, never ignore all events from the Saathi package:
+        // opening a Saathi activity must still invalidate external guidance.
+        if (event.packageName?.toString() == packageName &&
+            (com.saathi.overlay.HighlightOverlayService.ownsAccessibilityWindow(event.windowId) ||
+                com.saathi.overlay.AssistantBubbleService.ownsAccessibilityWindow(event.windowId))) return
+        refreshScreen()
     }
 
     private fun scheduleCopy() {
@@ -36,8 +53,17 @@ class SaathiAccessibilityService : AccessibilityService() {
         handler.postDelayed({
             pending = false
             if (!SaathiSession.isActive()) return@postDelayed
+            if (getSystemService(KeyguardManager::class.java).isKeyguardLocked) { SaathiSession.stop(); return@postDelayed }
             dirty = false
-            val root = rootInActiveWindow ?: return@postDelayed
+            val root = runCatching { rootInActiveWindow }.getOrNull() ?: run {
+                SaathiSession.onScreenUnavailable()
+                return@postDelayed
+            }
+            if (!SaathiSession.canObserve(root.packageName?.toString().orEmpty())) {
+                @Suppress("DEPRECATION") root.recycle()
+                SaathiSession.onScreenUnavailable()
+                return@postDelayed
+            }
             val ticket = SaathiSession.beginObservation(root.packageName?.toString().orEmpty(), root.windowId)
             val snapshot = AccessibilityNodeInfo.obtain(root)
             @Suppress("DEPRECATION") root.recycle()
@@ -45,6 +71,7 @@ class SaathiAccessibilityService : AccessibilityService() {
             copying = true
             nodeExecutor.execute {
                 try { SaathiSession.onScreenChanged(NodeMasker.flatten(snapshot), ticket) }
+                catch (_: RuntimeException) { SaathiSession.onObservationFailed(ticket) }
                 finally {
                     @Suppress("DEPRECATION") snapshot.recycle()
                     handler.post { copying = false; if (dirty) scheduleCopy() }
@@ -54,10 +81,18 @@ class SaathiAccessibilityService : AccessibilityService() {
     }
 
     override fun onDestroy() {
+        if (instance === this) instance = null
         handler.removeCallbacksAndMessages(null)
         SaathiSession.stop()
         nodeExecutor.shutdownNow()
         super.onDestroy()
     }
     override fun onInterrupt() { SaathiSession.stop() }
+
+    companion object {
+        private var instance: SaathiAccessibilityService? = null
+        fun isConnected() = instance != null
+        /** Main-thread only, like session changes and accessibility event delivery. */
+        fun requestCurrentScreen() { instance?.refreshScreen() }
+    }
 }

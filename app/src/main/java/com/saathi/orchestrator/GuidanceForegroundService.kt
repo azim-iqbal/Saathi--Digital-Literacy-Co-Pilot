@@ -10,6 +10,7 @@ import android.os.IBinder
 
 /** Keeps a visible, user-controlled guidance session alive while the user switches apps. */
 class GuidanceForegroundService : Service() {
+    private var ownedSession: String? = null
     private val permissionHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private val overlayPermissionChanged = android.app.AppOpsManager.OnOpChangedListener { op, packageName ->
         if (op == android.app.AppOpsManager.OPSTR_SYSTEM_ALERT_WINDOW && (packageName == null || packageName == this.packageName)) {
@@ -44,6 +45,7 @@ class GuidanceForegroundService : Service() {
             return START_NOT_STICKY
         }
         if (!SaathiSession.isActive()) { stopSelf(); return START_NOT_STICKY }
+        ownedSession = SaathiSession.sessionKey()
         // Covers permission loss before the watcher was registered, even without a new tree.
         if (!android.provider.Settings.canDrawOverlays(this)) {
             SaathiSession.stop()
@@ -55,11 +57,16 @@ class GuidanceForegroundService : Service() {
             .setContentTitle("Saathi guidance is active")
             .setContentText("Saathi is waiting for the next supported screen. Tap Stop to end guidance.")
             .setOngoing(true)
+            .setContentIntent(android.app.PendingIntent.getActivity(this, 45,
+                Intent(this, com.saathi.AssistantActivity::class.java),
+                android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE))
             .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Stop", Intent(this, GuidanceForegroundService::class.java).setAction(ACTION_STOP).putExtra(EXTRA_SESSION, SaathiSession.sessionKey()).let {
                 android.app.PendingIntent.getService(this, 1, it, android.app.PendingIntent.FLAG_CANCEL_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE)
             })
             .build()
-        startForeground(NOTIFICATION_ID, notification)
+        runCatching { startForeground(NOTIFICATION_ID, notification) }.onFailure {
+            SaathiSession.stopForSession(ownedSession); stopSelf()
+        }
         return START_NOT_STICKY
     }
 
@@ -67,6 +74,7 @@ class GuidanceForegroundService : Service() {
         getSystemService(android.app.AppOpsManager::class.java).stopWatchingMode(overlayPermissionChanged)
         permissionHandler.removeCallbacksAndMessages(null)
         unregisterReceiver(screenOff)
+        SaathiSession.stopForSession(ownedSession)
         super.onDestroy()
     }
 

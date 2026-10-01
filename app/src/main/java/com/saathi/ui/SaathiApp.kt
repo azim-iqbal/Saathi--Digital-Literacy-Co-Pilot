@@ -13,10 +13,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.Image
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.graphics.Brush
-import com.saathi.R
 import com.saathi.ui.glass.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -58,10 +55,44 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.saathi.DemoBillPayActivity
 import com.saathi.accessibility.SaathiAccessibilityService
+import com.saathi.core.GuidanceSessionState
+import com.saathi.guardrails.GuardrailDecision
 import com.saathi.language.GuidanceLanguage
 import com.saathi.orchestrator.SaathiSession
+import com.saathi.speech.TtsManager
+import com.saathi.speech.VoiceConversationService
+import com.saathi.speech.VoicePhase
 
 private enum class Screen { Welcome, Home, Practice, Intake, Setup, Session, Settings, Privacy }
+
+private fun GuidanceSessionState.labelCopy() = when (this) {
+    GuidanceSessionState.PREPARING -> Copy.PREPARING
+    GuidanceSessionState.OBSERVING -> Copy.OBSERVING
+    GuidanceSessionState.ANALYSING -> Copy.ANALYSING
+    GuidanceSessionState.GUIDING -> Copy.ACTIVE
+    GuidanceSessionState.WAITING_FOR_PRACTICE -> Copy.WAITING
+    GuidanceSessionState.SENSITIVE_HANDOVER -> Copy.SENSITIVE
+    GuidanceSessionState.PAUSED -> Copy.PAUSED
+    GuidanceSessionState.COMPLETED -> Copy.COMPLETED
+    GuidanceSessionState.ERROR -> Copy.START_ERROR
+    GuidanceSessionState.STOPPED -> Copy.STOPPED
+}
+
+private fun GuidanceSessionState.bodyCopy() = when (this) {
+    GuidanceSessionState.WAITING_FOR_PRACTICE -> Copy.WAITING_BODY
+    GuidanceSessionState.SENSITIVE_HANDOVER -> Copy.SENSITIVE_BODY
+    GuidanceSessionState.COMPLETED -> Copy.COMPLETED_BODY
+    else -> Copy.SESSION_BODY
+}
+
+private fun GuidanceSessionState.isRunning() = this in setOf(
+    GuidanceSessionState.PREPARING,
+    GuidanceSessionState.OBSERVING,
+    GuidanceSessionState.ANALYSING,
+    GuidanceSessionState.GUIDING,
+    GuidanceSessionState.WAITING_FOR_PRACTICE,
+    GuidanceSessionState.SENSITIVE_HANDOVER
+)
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -71,6 +102,7 @@ fun SaathiApp() {
     var language by remember { mutableStateOf(preferences.language) }
     var theme by remember { mutableStateOf(preferences.theme) }
     var speech by remember { mutableStateOf(preferences.speech) }
+    var speechRate by remember { mutableFloatStateOf(preferences.speechRate) }
     var reduceMotion by remember { mutableStateOf(preferences.reducedMotion) }
     var reduceTransparency by remember { mutableStateOf(preferences.reducedTransparency) }
     var practiceCategory by rememberSaveable { mutableIntStateOf(0) }
@@ -101,20 +133,10 @@ fun SaathiApp() {
         onDispose { lifecycle.lifecycle.removeObserver(observer) }
     }
     val status by SaathiSession.status.collectAsState()
+    val voicePhase by VoiceConversationService.phase.collectAsState()
+    var pendingVoiceSession by remember { mutableStateOf<String?>(null) }
     val dark = theme == "Dark" || (theme == "System" && isSystemInDarkTheme())
-    val colors = if (dark) darkColorScheme(
-        primary = Color(0xFFA4EE99), onPrimary = Color(0xFF131513),
-        background = Color(0xFF131513), surface = Color(0xFF202420),
-        onBackground = Color(0xFFF6F6F6), onSurface = Color(0xFFF6F6F6),
-        onSurfaceVariant = Color(0xFFB8C3B6), outlineVariant = Color(0xFF3E493C),
-        primaryContainer = Color(0xFF253D22), onPrimaryContainer = Color(0xFFF6F6F6)
-    ) else lightColorScheme(
-        primary = Color(0xFF087900), onPrimary = Color.White,
-        background = Color.White, surface = Color.White,
-        onBackground = Color(0xFF171A17), onSurface = Color(0xFF171A17),
-        onSurfaceVariant = Color(0xFF596259), outlineVariant = Color(0xFFDCE3DA),
-        primaryContainer = Color(0xFFD7FFD4), onPrimaryContainer = Color(0xFF171A17)
-    )
+    val colors = saathiColorScheme(dark)
     val view = LocalView.current
     fun navigate(next: Screen) {
         error = null
@@ -125,9 +147,26 @@ fun SaathiApp() {
     fun openPractice() { context.startActivity(Intent(context, DemoBillPayActivity::class.java)) }
     fun start() {
         if (!Settings.canDrawOverlays(context) || !canReadScreen()) { navigate(Screen.Setup); return }
-        runCatching { SaathiSession.start(context, selectedGoal, language, speech) }
-            .onSuccess { navigate(Screen.Session) }
+        runCatching { SaathiSession.start(context, selectedGoal, language, speech, speechRate) }
+            .onSuccess { result ->
+                if (result.decision == GuardrailDecision.ALLOW && SaathiSession.isActive()) navigate(Screen.Session)
+                else error = Copy.START_ERROR
+            }
             .onFailure { SaathiSession.stop(); error = Copy.START_ERROR }
+    }
+    fun launchConversation() {
+        if (!lifecycle.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) return
+        runCatching { SaathiSession.startConversation(context); openPractice() }
+            .onFailure { VoiceConversationService.stop(context); error = Copy.VOICE_ERROR }
+    }
+    val voicePermissions = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
+        val expected = pendingVoiceSession
+        pendingVoiceSession = null
+        if (expected != null && expected == SaathiSession.sessionKey()) {
+            val granted = context.checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED &&
+                (android.os.Build.VERSION.SDK_INT < 33 || context.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) == android.content.pm.PackageManager.PERMISSION_GRANTED)
+            if (granted) launchConversation() else error = Copy.VOICE_PERMISSION
+        }
     }
     val recognize = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         if (result.resultCode == Activity.RESULT_OK) {
@@ -182,12 +221,7 @@ fun SaathiApp() {
                 screenStates.SaveableStateProvider(current.name) {
                 Column(Modifier.fillMaxSize().wrapContentWidth(Alignment.CenterHorizontally).widthIn(max = 720.dp).padding(bottom = if (current == Screen.Welcome) 0.dp else dockSpace).testTag("page-${current.name}").verticalScroll(rememberScrollState()).padding(24.dp), verticalArrangement = Arrangement.spacedBy(24.dp)) {
                     FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Image(painterResource(R.drawable.ic_saathi_mark), contentDescription = null,
-                                colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(colors.primary), modifier = Modifier.size(36.dp))
-                            Spacer(Modifier.width(12.dp))
-                            Text("Saathi", style = MaterialTheme.typography.headlineMedium, color = colors.onBackground)
-                        }
+                        SaathiBrand()
                         if (current !in listOf(Screen.Welcome, Screen.Home, Screen.Practice, Screen.Settings)) {
                             GlassButton(tr(Copy.BACK), onClick = { navigate(Screen.Home) }, primary = false, compact = true)
                         } else if (current != Screen.Welcome) {
@@ -206,11 +240,12 @@ fun SaathiApp() {
                         }
                         Screen.Home -> {
                             Heading(tr(Copy.HELLO)); Body(tr(Copy.SUBTITLE))
+                            Action(tr(Copy.LIVE_HELP)) { context.startActivity(Intent(context, com.saathi.AssistantActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
                             Feature(tr(Copy.FEATURE), tr(Copy.FEATURE_BODY)) {
                                 Text(tr(Copy.LOCAL), style = MaterialTheme.typography.labelLarge)
                                 Action(tr(Copy.START)) { navigate(Screen.Intake) }
                             }
-                            if (status != "Stopped") SettingRow(tr(if (status == "Paused") Copy.PAUSED else Copy.ACTIVE), tr(Copy.SESSION_BODY)) { navigate(Screen.Session) }
+                            if (status != GuidanceSessionState.STOPPED) SettingRow(tr(status.labelCopy()), tr(status.bodyCopy())) { navigate(Screen.Session) }
                             SectionTitle(tr(Copy.CHOOSE))
                             TaskChoices(language) { selectedGoal = it; navigate(Screen.Setup) }
                             SettingRow(tr(Copy.CHECK), tr(Copy.SETUP_BODY)) { navigate(Screen.Setup) }
@@ -252,11 +287,25 @@ fun SaathiApp() {
                             Body(tr(Copy.LIMIT))
                         }
                         Screen.Session -> {
-                            val label = when(status) { "Paused" -> Copy.PAUSED; "Active" -> Copy.ACTIVE; else -> Copy.STOPPED }
-                            Heading(tr(label)); Feature(tr(Copy.LOCAL), tr(Copy.SESSION_BODY))
-                            if (status == "Active") {
+                            Heading(tr(status.labelCopy())); Feature(tr(Copy.LOCAL), tr(status.bodyCopy()))
+                            if (status.isRunning()) {
                                 Action(tr(Copy.OPEN_PRACTICE)) { openPractice() }
+                                Feature(tr(Copy.CONVERSATION), tr(Copy.CONVERSATION_BODY)) {
+                                    Text(voicePhase.text(language))
+                                    Action(tr(Copy.START_CONVERSATION), enabled = VoiceConversationService.supported(context)) {
+                                        pendingVoiceSession = SaathiSession.sessionKey()
+                                        val permissions = mutableListOf(android.Manifest.permission.RECORD_AUDIO)
+                                        if (android.os.Build.VERSION.SDK_INT >= 33) permissions += android.Manifest.permission.POST_NOTIFICATIONS
+                                        voicePermissions.launch(permissions.toTypedArray())
+                                    }
+                                    if (voicePhase != VoicePhase.OFF) Action(tr(Copy.STOP_CONVERSATION), secondary = true) {
+                                        VoiceConversationService.stop(context)
+                                    }
+                                    if (!VoiceConversationService.supported(context)) Body(tr(Copy.VOICE_ERROR))
+                                }
                                 Action(tr(Copy.PAUSE), secondary = true) { SaathiSession.pause() }
+                            } else if (status == GuidanceSessionState.COMPLETED) {
+                                Action(tr(Copy.PRACTISE_AGAIN)) { navigate(Screen.Setup) }
                             } else Action(tr(Copy.RESUME)) { start() }
                             Action(tr(Copy.STOP), secondary = true) { SaathiSession.stop() }
                             Body(tr(Copy.SAFETY))
@@ -269,14 +318,19 @@ fun SaathiApp() {
                                 Choice(tr(label), theme == value) { theme = value; preferences.theme = value }
                             }
                             SectionTitle(tr(Copy.EXPERIENCE))
+                            Action("Offline voice setup", secondary = true) { context.startActivity(Intent(context, com.saathi.VoiceSetupActivity::class.java)) }
                             ToggleRow(tr(Copy.SPEECH), tr(Copy.SPEECH_BODY), speech) { speech = it; preferences.speech = it }
+                            if (speech) SpeechSpeed(language, speechRate) { value -> speechRate = value; preferences.speechRate = value }
                             ToggleRow(tr(Copy.MOTION), tr(Copy.MOTION_BODY), reduceMotion) { reduceMotion = it; preferences.reducedMotion = it }
                             ToggleRow(tr(Copy.TRANSPARENCY), tr(Copy.TRANSPARENCY_BODY), reduceTransparency) { reduceTransparency = it; preferences.reducedTransparency = it }
                             ToggleRow(tr(Copy.HAPTICS), tr(Copy.HAPTICS_BODY), haptics) { haptics = it; preferences.haptics = it }
                             SettingRow(tr(Copy.PRIVACY), tr(Copy.PRIVACY_BODY)) { navigate(Screen.Privacy) }
+                            if (com.saathi.BuildConfig.DEBUG) Action("Backend connection", secondary = true) { com.saathi.gateway.PracticeGateway.openSetup(context) }
                             Body(tr(Copy.LIMIT))
                         }
                         Screen.Privacy -> {
+                            if (com.saathi.gateway.PracticeGateway.aiEnabled()) Body("AI navigation is enabled for new live sessions. Your task, app identity and eligible visible labels go through your server to Gemini and Groq. Clear local data disables this connection and forgets its token.")
+                            if (com.saathi.gateway.PracticeGateway.enabled()) Body("Local backend test is enabled for practice: public control IDs and a task category go to your computer’s loopback server. Help in other apps stays local. Clear local data also forgets the temporary token.")
                             Heading(tr(Copy.PRIVACY)); Feature(tr(Copy.LOCAL), tr(Copy.PRIVACY_BODY))
                             Body(tr(Copy.ACCESS_BODY)); Body(tr(Copy.VOICE_NOTE)); Body(tr(Copy.LIMIT))
                             Action(tr(Copy.STOP)) { SaathiSession.stop() }
@@ -312,10 +366,11 @@ fun SaathiApp() {
         AlertDialog(containerColor = colors.surface, tonalElevation = 0.dp, onDismissRequest = { clearDialog = false }, title = { Text(tr(Copy.CLEAR)) }, text = { Text(tr(Copy.CLEAR_BODY)) }, confirmButton = {
             GlassButton(tr(Copy.CLEAR), primary = false, compact = true, onClick = {
                 SaathiSession.stop()
+                com.saathi.gateway.PracticeGateway.disable()
                 com.saathi.storage.ConversationStore(context).clear()
                 com.saathi.storage.GuidanceStateStore(context).clear()
                 listOf("saathi_ui", "saathi_preferences", "saathi_theme", "completed_guidance_flows", "gemini_rate_limits").forEach { context.getSharedPreferences(it, 0).edit().clear().apply() }
-                theme = "System"; language = GuidanceLanguage.ENGLISH; speech = false; reduceMotion = false; reduceTransparency = false; haptics = true; task = ""; practiceCategory = 0
+                theme = "System"; language = GuidanceLanguage.ENGLISH; speech = false; speechRate = TtsManager.DEFAULT_SPEECH_RATE; reduceMotion = false; reduceTransparency = false; haptics = true; task = ""; practiceCategory = 0
                 clearDialog = false; navigate(Screen.Welcome)
             })
         }, dismissButton = { GlassButton(tr(Copy.CANCEL), primary = false, compact = true, onClick = { clearDialog = false }) })
@@ -362,6 +417,30 @@ fun SaathiApp() {
         Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).toggleable(value = checked, role = Role.Switch, onValueChange = change).padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) { Text(title, style = MaterialTheme.typography.labelLarge); Body(description) }
             Switch(checked = checked, onCheckedChange = null, modifier = Modifier.padding(start = 12.dp))
+        }
+    }
+}
+@Composable private fun SpeechSpeed(language: GuidanceLanguage, selectedRate: Float, change: (Float) -> Unit) {
+    val context = LocalContext.current
+    val preview = remember(selectedRate) { TtsManager(context, selectedRate) }
+    DisposableEffect(preview) { onDispose { preview.release() } }
+    val lifecycle = LocalLifecycleOwner.current
+    DisposableEffect(lifecycle, preview) {
+        val observer = LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_STOP) preview.stop() }
+        lifecycle.lifecycle.addObserver(observer)
+        onDispose { lifecycle.lifecycle.removeObserver(observer) }
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        SectionTitle(Copy.SPEECH_SPEED.text(language))
+        listOf(
+            Copy.SLOW to TtsManager.MIN_SPEECH_RATE,
+            Copy.STANDARD to TtsManager.DEFAULT_SPEECH_RATE,
+            Copy.FAST to TtsManager.MAX_SPEECH_RATE
+        ).forEach { (label, rate) ->
+            Choice(label.text(language), selectedRate == rate) { change(rate) }
+        }
+        Action(Copy.PREVIEW_VOICE.text(language), secondary = true) {
+            preview.speak(Copy.SESSION_BODY.text(language), language)
         }
     }
 }

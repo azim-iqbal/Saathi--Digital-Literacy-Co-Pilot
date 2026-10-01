@@ -50,9 +50,15 @@ Desktop.ini
 *~
 
 # Test, profiling, and temporary artifacts
+__pycache__/
+*.pyc
 test-results/
 coverage/
 *.ec
 *.hprof
 *.trace
 tmp/
+
+# Local persistent gateway counters (no user data)
+backend/*.sqlite3
+backend/*.sqlite3-*

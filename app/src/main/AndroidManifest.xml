@@ -4,6 +4,11 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <queries>
+        <intent><action android:name="android.speech.RecognitionService" /></intent>
+        <intent><action android:name="android.intent.action.TTS_SERVICE" /></intent>
+    </queries>
 
     <application
         android:allowBackup="false"
@@ -13,6 +18,8 @@
         android:theme="@style/AppTheme"
         android:usesCleartextTraffic="false">
         <activity android:name=".DemoBillPayActivity" android:exported="false" />
+        <activity android:name=".AssistantActivity" android:exported="false" android:excludeFromRecents="true" android:taskAffinity="com.saathi.assistant" />
+        <activity android:name=".VoiceSetupActivity" android:exported="false" />
         <activity android:name=".TermsActivity" android:exported="false" />
         <activity android:name=".LaunchActivity" android:exported="true" android:theme="@style/SaathiStarting">
             <intent-filter>
@@ -25,7 +32,7 @@
         <service
             android:name=".accessibility.SaathiAccessibilityService"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
-            android:exported="false"
+            android:exported="true"
             android:label="Saathi guidance">
             <intent-filter>
                 <action android:name="android.accessibilityservice.AccessibilityService" />
@@ -35,6 +42,7 @@
                 android:resource="@xml/accessibility_service_config" />
         </service>
         <service android:name=".overlay.HighlightOverlayService" android:exported="false" />
+        <service android:name=".overlay.AssistantBubbleService" android:exported="false" />
         <service android:name=".orchestrator.GuidanceForegroundService" android:exported="false" />
         <service
             android:name=".speech.VoiceConversationService"

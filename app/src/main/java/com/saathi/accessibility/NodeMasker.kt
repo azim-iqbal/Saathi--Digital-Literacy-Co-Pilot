@@ -10,17 +10,17 @@ object NodeMasker {
 
     fun flatten(root: AccessibilityNodeInfo): List<UiNode> {
         val nodes = mutableListOf<UiNode>()
-        visit(root, nodes)
+        visit(root, nodes, 0, intArrayOf(0))
         return nodes
     }
 
-    private fun visit(node: AccessibilityNodeInfo, into: MutableList<UiNode>) {
-        if (into.size >= MAX_NODES) return
+    private fun visit(node: AccessibilityNodeInfo, into: MutableList<UiNode>, depth: Int, visited: IntArray, clickableAncestor: Rect? = null) {
+        if (visited[0]++ >= MAX_NODES || depth > 50) return
         val bounds = Rect().also(node::getBoundsInScreen)
         if (node.isVisibleToUser && !bounds.isEmpty) {
-            val rawText = node.text?.toString()
-            val rawDescription = node.contentDescription?.toString()
-            val hint = if (android.os.Build.VERSION.SDK_INT >= 26) node.hintText?.toString() else null
+            val rawText = node.text?.toString()?.take(300)
+            val rawDescription = node.contentDescription?.toString()?.take(300)
+            val hint = if (android.os.Build.VERSION.SDK_INT >= 26) node.hintText?.toString()?.take(300) else null
             val id = node.viewIdResourceName
             val sensitive = isSensitive(node.isPassword, hint, id, rawDescription, rawText)
             into += UiNode(
@@ -34,13 +34,16 @@ object NodeMasker {
                 isEnabled = node.isEnabled,
                 isClickable = node.isClickable,
                 isSensitive = sensitive,
-                hasValue = !rawText.isNullOrBlank()
+                hasValue = !rawText.isNullOrBlank(),
+                clickableAncestorBounds = clickableAncestor?.let(::Rect),
+                isEditable = node.isEditable
             )
         }
         for (index in 0 until node.childCount) {
-            if (into.size >= MAX_NODES) return
+            if (visited[0] >= MAX_NODES) return
             node.getChild(index)?.let { child ->
-                try { visit(child, into) } finally { runCatching { child.recycle() } }
+                val ancestor = if (node.isClickable && node.isEnabled && node.isVisibleToUser && !bounds.isEmpty) bounds else clickableAncestor
+                try { visit(child, into, depth + 1, visited, ancestor) } finally { runCatching { child.recycle() } }
             }
         }
     }
